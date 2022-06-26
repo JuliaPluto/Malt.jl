@@ -2,6 +2,9 @@ import Base: Process
 import Sockets: TCPServer, localhost
 
 using Sockets
+using Serialization
+
+include("./messages.jl")
 
 struct Manager
     server::TCPServer
@@ -38,5 +41,16 @@ function worker_cmd(port)
     addenv(`julia $script`, Dict("DALT_PORT" => string(port)))
 end
 
-# TODO: Message (serialization)
+# REVIEW: Rename to read/write instead?
+
+function send(w::Worker, msg::AbstractMessage)
+    serialize(w.sock, msg)
+end
+
+function recv(w::Worker)::AbstractMessage
+    deserialize(w.sock)
+end
+
+# TODO: Async wrappers
+# TODO: Macro wrappers (on top of async wrappers)
 
