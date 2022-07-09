@@ -44,25 +44,3 @@ Problems I had during the week:
 - The port number can be passed to the worker via arguments or env variables.
   For now, I've settled on an env variable.
 
-
-## TODO
-
-Things to do next week:
-
-- **Review Julia finalizers.** Sending signals to the worker seems to work.
-  Right now, the only missing case is when the manager is terminated forcefully
-  and doesn't send the interrupt signal to the worker.
-  Pluto already handles it's own termination "gracefully", so this might not be a problem.
-  In any case, since the worker is part of the same process group as the manager
-  (this isn't true about Distributed),
-  the OS should reclaim it after the manager dies.
-
-- **Write simple "messaging protocol"** for communication between server and worker.
-  It should have different types of messages including:
-  - `eval` request
-  - `completion` request
-  - `exit` request
-  The `eval` request should serialize messages appropriately.
-
-- Talk to Dr. Pedraza (professor of distributed systems at the UNAL).
-
