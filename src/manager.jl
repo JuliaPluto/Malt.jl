@@ -1,56 +1,62 @@
 import Base: Process
 import Sockets: TCPServer, localhost
+import Base.Meta: quot
 
-using Sockets
 using Serialization
+using Sockets
 
 include("./messages.jl")
 
-struct Manager
-    server::TCPServer
-    port::UInt16
-end
 
-# TODO: Does Worker actually need an explicit finalizer?
 mutable struct Worker
+    port::UInt16
     proc::Process
-    sock::TCPSocket
 end
 
-function Manager()
-    server = TCPServer()
-    bind(server, localhost, 0)
-    listen(server)
-    _ip, port = getsockname(server)
-    Manager(server, port)
+function Worker()
+    # Create remote process
+    cmd = _get_worker_cmd()
+    proc = open(cmd, "w+") # TODO: Capture stdio
+
+    # Block until having the port of the remote process
+    port_str = readline(proc)
+    port = parse(UInt16, port_str)
+    Worker(port, proc)
 end
 
-function Worker(man::Manager)
-    cmd = worker_cmd(man.port)
-    t = @async accept(man.server)
-    proc = open(cmd) # Create worker process
-    sock = fetch(t)  # wait until process is connected
-    Worker(proc, sock)
-end
-
-function worker_cmd(port)
-    jl_bin = `julia`    # REVIEW: Can we always assume that julia is in $PATH?
-
+function _get_worker_cmd(bin="julia")
     script = dirname(@__FILE__) * "/worker.jl"
-
-    addenv(`julia $script`, Dict("DALT_PORT" => string(port)))
+    `$bin $script`
 end
-
-# REVIEW: Rename to read/write instead?
 
 function send(w::Worker, msg::AbstractMessage)
-    serialize(w.sock, msg)
+    # Send message
+    s = connect(w.port)
+    serialize(s, msg)
+
+    # Return a task to act as Promise
+    @async begin
+        response = deserialize(s)
+        close(s)
+        response
+    end
 end
 
-function recv(w::Worker)::AbstractMessage
-    deserialize(w.sock)
+## Shorthands
+
+stop(w::Worker) = send(w, ExitRequest())
+
+remote_eval(w::Worker, ex::Expr) = send(w, EvalRequest(ex))
+remote_eval(w::Worker, sym::Symbol) = send(w, EvalRequest(Expr(sym)))
+
+macro remote_eval(w, ex)
+    Expr(
+        :call,
+        remote_eval,
+        esc(w),     # evaluate w
+        quot(ex),   # Don't evaluate ex
+    )
 end
 
-# TODO: Async wrappers
-# TODO: Macro wrappers (on top of async wrappers)
+# TODO: Remote channels
 

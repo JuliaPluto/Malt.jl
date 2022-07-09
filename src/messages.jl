@@ -4,7 +4,7 @@ abstract type AbstractMessage end
 # TODO: Completion requests
 
 struct EvalRequest <: AbstractMessage
-    expr::Expr
+    ex::Expr
 end
 
 struct EvalResponse <: AbstractMessage
