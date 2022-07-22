@@ -1,4 +1,4 @@
-module Dalt
+module Malt
 
 export Worker
 export send

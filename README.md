@@ -1,4 +1,3 @@
-**D**istributed **Alt**ernative
+# Malt.jl
 
-A work-in-progress multi-processing package.
-
+Malt is a (work-in-progress) minimal multi-processing package for Julia.

@@ -1,4 +1,4 @@
-"""Supertype for requests send to, and responses received from Dalt workers"""
+"""Supertype for requests send to, and responses received from Malt workers"""
 abstract type AbstractMessage end
 
 # TODO: Completion requests
@@ -17,7 +17,7 @@ end
 """
     ChannelRequest(ex::Expr)
 
-`ChannelRequest` is a type of message sent to Dalt workers to create a
+`ChannelRequest` is a type of message sent to Malt workers to create a
 unidirectional Channel between processes (from worker to manager).
 
 `ex` has to be an expression that evaluates to a Channel. `ex` should assign
