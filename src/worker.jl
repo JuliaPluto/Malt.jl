@@ -20,11 +20,10 @@ function main()
     @debug(port)
     println(stdout, port)
 
-    handle(server)
+    serve(server)
 end
 
-"Handle requests sent to server"
-function handle(server::TCPServer)
+function serve(server::TCPServer)
     try
         while isopen(server)
             # Wait for new request
@@ -35,7 +34,7 @@ function handle(server::TCPServer)
             @async begin
                 msg = deserialize(sock)
                 @debug(msg)
-                work(sock, msg)
+                handle(sock, msg)
             end
         end
     catch e
@@ -50,19 +49,19 @@ end
 # Right now all EvalRequests are sandboxed in the stub module.
 # However, it might make sense to distinguish between sandboxed and unsandboxed
 # expressions (e.g. those used to initialize the PlutoRunner).
-function work(sock, msg::EvalRequest)
+function handle(sock, msg::EvalRequest)
     serialize(sock, EvalResponse(@eval(Stub, $(msg.ex))))
     close(sock)
 end
 
-function work(sock, msg::ExitRequest)
+function handle(sock, msg::ExitRequest)
     serialize(sock, nothing)
     close(sock)
     @debug("Exit message. bye!")
     exit()
 end
 
-function work(sock, msg::ChannelRequest)
+function handle(sock, msg::ChannelRequest)
     c = @eval(Stub, $(msg.ex))
 
     while isopen(c)
