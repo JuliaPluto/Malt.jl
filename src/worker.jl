@@ -3,6 +3,7 @@ import Sockets: TCPServer, localhost
 using Sockets
 using Serialization
 using Logging
+using Malt
 
 include("./messages.jl")
 
