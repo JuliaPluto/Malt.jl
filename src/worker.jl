@@ -5,8 +5,6 @@ using Serialization
 using Logging
 using Malt
 
-include("./messages.jl")
-
 # # TODO: Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto).
 # global_logger(ConsoleLogger(stderr, Logging.Debug))
 
