@@ -1,12 +1,9 @@
 module Malt
 
 export Worker
-export send
-export stop
-export remote_eval
-export @remote_eval
+export remotecall
+export remotecall_eval
 
-include("./messages.jl")
 include("./manager.jl")
 
 end # module

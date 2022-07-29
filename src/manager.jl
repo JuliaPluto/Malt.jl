@@ -1,5 +1,5 @@
 import Base.Meta: quot
-import Base: Process, Channel
+import Base: Process, Channel, kill
 import Serialization: AbstractSerializer, serialize, deserialize
 
 using Logging
@@ -10,18 +10,12 @@ mutable struct Worker
     proc::Process
 end
 
-# FIXME
-msgtuple(msg::EvalRequest) = (header=:eval, body=msg.ex)
-msgtuple(msg::ChannelRequest) = (header=:channel, body=msg.ex)
-msgtuple(msg::ExitRequest) = (header=:exit, body=())
-serialize(io::AbstractSerializer, msg::AbstractMessage) = serialize(io, msgtuple(msg))
-
 function Worker()
-    # Create remote process
+    # Spawn process
     cmd = _get_worker_cmd()
     proc = open(cmd, "w+") # TODO: Capture stdio
 
-    # Block until having the port of the remote process
+    # Block until reading the port number of the process
     port_str = readline(proc)
     port = parse(UInt16, port_str)
     Worker(port, proc)
@@ -33,24 +27,41 @@ function _get_worker_cmd(bin="julia")
     `$bin $script`
 end
 
-function send(w::Worker, msg::AbstractMessage)
-    # Send message
-    s = connect(w.port)
-    serialize(s, msg)
+# We use tuples instead of structs so the worker doesn't need to load
+# additional modules.
+call_msg(f, args...; kwargs...) = (header=:call, body=(f=f, args=args, kwargs=kwargs))
+channel_msg(ex) = (header=:channel, body=ex)
 
-    # Return a task to act as Promise
+
+function _send_msg(w::Worker, msg)
+    socket = connect(w.port)
+    serialize(socket, msg)
+    return socket
+end
+
+function _promise(socket)
     @async begin
-        response = deserialize(s)
-        close(s)
+        response = deserialize(socket)
+        close(socket)
         response
     end
 end
 
-"Create a channel to communicate with worker. See `ChannelRequest`"
-function send(w::Worker, msg::ChannelRequest)
+function send(w::Worker, msg)
+    _promise(_send_msg(w, msg))
+end
+
+"""
+    worker_channel(w::Worker, ex)
+
+Create a channel to communicate with worker `w`. `ex` must be an expression
+that evaluates to a Channel. `ex` should assign the Channel to a (global) variable
+so the worker has a handle that can be used to send messages back to the manager.
+"""
+function worker_channel(w::Worker, ex)::Channel
     # Send message
     s = connect(w.port)
-    serialize(s, msg)
+    serialize(s, channel_msg(ex))
 
     # Return channel
     Channel(function(channel)
@@ -62,22 +73,27 @@ function send(w::Worker, msg::ChannelRequest)
     end)
 end
 
-
-## Shorthands
-
-stop(w::Worker) = send(w, ExitRequest())
-
-Base.Channel(w::Worker, ex::Expr) = send(w, ChannelRequest(ex))
-
-remote_eval(w::Worker, ex::Expr) = send(w, EvalRequest(ex))
-remote_eval(w::Worker, sym::Symbol) = send(w, EvalRequest(Expr(sym)))
-
-macro remote_eval(w, ex)
-    Expr(
-        :call,
-        remote_eval,
-        esc(w),     # Evaluate w
-        quot(ex),   # Don't evaluate ex
-    )
+function remotecall(f, w::Worker, args...; kwargs...)
+    send(w, call_msg(f, args..., kwargs...))
 end
+
+function remote_do(f, w::Worker, args...; kwargs...)
+    _send_msg(w, call_msg(f, args..., kwargs...))
+    return
+end
+
+"""
+    remotecall_eval([m], w::Worker, ex)
+
+Evaluate expression `ex` under module `m` on the worker `w`.
+If no module is specified, `ex` is evaluated under Main.
+
+Unlike `remotecall`, `remotecall_eval` is a blocking call.
+"""
+remotecall_eval(m, w::Worker, ex) = fetch(remotecall(Core.eval, w, m, ex))
+remotecall_eval(w::Worker, ex) = remotecall_eval(Main, w, ex)
+
+Base.Channel(w::Worker, ex::Expr) = worker_channel(w, ex)
+
+Base.kill(w::Worker) =  remote_do(Base.exit, w)
 

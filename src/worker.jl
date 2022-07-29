@@ -28,7 +28,7 @@ function serve(server::Sockets.TCPServer)
             @async begin
                 msg = deserialize(sock)
                 @debug(msg)
-                handle(sock, Msg{msg.header}, msg.body)
+                handle(sock, msg)
             end
         end
     catch InterruptException
@@ -38,25 +38,26 @@ function serve(server::Sockets.TCPServer)
     @debug("Closed socket. bye!")
 end
 
-struct Msg{S} end
-
-function handle(socket, ::Type{Msg{:eval}}, expr)
-    serialize(socket, eval(expr))
-    close(socket)
-end
-
-function handle(socket, ::Type{Msg{:channel}}, expr)
-    channel = eval(expr)
-    while isopen(channel)
-        serialize(socket, take!(channel))
+# Poor man's dispatch
+function handle(socket, msg)
+    if msg.header == :call
+        _handle_call(socket, msg.body)
+    elseif msg.header == :channel
+        _handle_channel(socket, msg.body)
     end
 end
 
-function handle(socket, ::Type{Msg{:exit}}, _)
-    serialize(socket, nothing)
+function _handle_call(socket, body)
+    result = body.f(body.args...; body.kwargs...)
+    serialize(socket, result)
     close(socket)
-    @debug("Exit message. bye!")
-    exit()
+end
+
+function _handle_channel(socket, ex)
+    channel = eval(ex)
+    while isopen(channel)
+        serialize(socket, take!(channel))
+    end
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
