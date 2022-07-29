@@ -1,15 +1,20 @@
-import Base: Process
-import Sockets: TCPServer, localhost
-import Base: Channel
 import Base.Meta: quot
+import Base: Process, Channel
+import Serialization: AbstractSerializer, serialize, deserialize
 
-using Serialization
+using Logging
 using Sockets
 
 mutable struct Worker
     port::UInt16
     proc::Process
 end
+
+# FIXME
+msgtuple(msg::EvalRequest) = (header=:eval, body=msg.ex)
+msgtuple(msg::ChannelRequest) = (header=:channel, body=msg.ex)
+msgtuple(msg::ExitRequest) = (header=:exit, body=())
+serialize(io::AbstractSerializer, msg::AbstractMessage) = serialize(io, msgtuple(msg))
 
 function Worker()
     # Create remote process
@@ -49,7 +54,7 @@ function send(w::Worker, msg::ChannelRequest)
 
     # Return channel
     Channel(function(channel)
-        while isopen(channel)
+        while isopen(channel) && isopen(s)
             put!(channel, deserialize(s))
         end
         close(s)

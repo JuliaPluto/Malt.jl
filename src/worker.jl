@@ -1,28 +1,23 @@
-import Sockets: TCPServer, localhost
-
-using Sockets
-using Serialization
 using Logging
-using Malt
+using Serialization
+using Sockets
 
 # # TODO: Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto).
 # global_logger(ConsoleLogger(stderr, Logging.Debug))
-
-module Stub end
 
 function main()
     # NOTE: Same port hint as Distributed
     port_hint = 9000 + (getpid() % 1000)
     port, server = listenany(port_hint)
 
-    # Write port number to stdout so manager knows where to send requests.
+    # Write port number to stdout to let main process know where to send requests.
     @debug(port)
     println(stdout, port)
 
     serve(server)
 end
 
-function serve(server::TCPServer)
+function serve(server::Sockets.TCPServer)
     try
         while isopen(server)
             # Wait for new request
@@ -33,39 +28,35 @@ function serve(server::TCPServer)
             @async begin
                 msg = deserialize(sock)
                 @debug(msg)
-                handle(sock, msg)
+                handle(sock, Msg{msg.header}, msg.body)
             end
         end
-    catch e
-        println(e)
+    catch InterruptException
         @debug("Caught interrupt. bye!")
         exit()
     end
     @debug("Closed socket. bye!")
 end
 
-# TODO:
-# Right now all EvalRequests are sandboxed in the stub module.
-# However, it might make sense to distinguish between sandboxed and unsandboxed
-# expressions (e.g. those used to initialize the PlutoRunner).
-function handle(sock, msg::EvalRequest)
-    serialize(sock, EvalResponse(@eval(Stub, $(msg.ex))))
-    close(sock)
+struct Msg{S} end
+
+function handle(socket, ::Type{Msg{:eval}}, expr)
+    serialize(socket, eval(expr))
+    close(socket)
 end
 
-function handle(sock, msg::ExitRequest)
-    serialize(sock, nothing)
-    close(sock)
+function handle(socket, ::Type{Msg{:channel}}, expr)
+    channel = eval(expr)
+    while isopen(channel)
+        serialize(socket, take!(channel))
+    end
+end
+
+function handle(socket, ::Type{Msg{:exit}}, _)
+    serialize(socket, nothing)
+    close(socket)
     @debug("Exit message. bye!")
     exit()
-end
-
-function handle(sock, msg::ChannelRequest)
-    c = @eval(Stub, $(msg.ex))
-
-    while isopen(c)
-        serialize(sock, take!(c))
-    end
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
