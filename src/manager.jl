@@ -43,7 +43,14 @@ function _promise(socket)
     @async begin
         response = deserialize(socket)
         close(socket)
-        response
+        # FIXME:
+        # `response.result` can be the result of a computation, or an Exception.
+        # If it's an exception defined in Base, we could rethrow it here,
+        # but what should be done if it's an exception that's NOT defined in Base???
+        #
+        # Also, these exceptions are wrapped in a `TaskFailedException`,
+        # which seems kind of ugly. How to unwrap them?
+        response.result 
     end
 end
 

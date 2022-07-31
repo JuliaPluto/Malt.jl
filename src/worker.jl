@@ -48,9 +48,14 @@ function handle(socket, msg)
 end
 
 function _handle_call(socket, body)
-    result = body.f(body.args...; body.kwargs...)
-    serialize(socket, result)
-    close(socket)
+    try
+        result = body.f(body.args...; body.kwargs...)
+        serialize(socket, (status=:ok, result=result))
+    catch e
+        serialize(socket, (status=:err, result=e))
+    finally
+        close(socket)
+    end
 end
 
 function _handle_channel(socket, ex)
