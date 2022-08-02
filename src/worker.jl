@@ -41,18 +41,28 @@ end
 # Poor man's dispatch
 function handle(socket, msg)
     if msg.header == :call
-        _handle_call(socket, msg.body)
+        _handle_call(socket, msg.body, msg.send_result)
+    elseif msg.header == :remote_do
+        _handle_remote_do(socket, msg.body)
     elseif msg.header == :channel
         _handle_channel(socket, msg.body)
     end
 end
 
-function _handle_call(socket, body)
+function _handle_call(socket, body, send_result)
     try
         result = body.f(body.args...; body.kwargs...)
-        serialize(socket, (status=:ok, result=result))
+        serialize(socket, (status=:ok, result=(send_result ? result : nothing)))
     catch e
         serialize(socket, (status=:err, result=e))
+    finally
+        close(socket)
+    end
+end
+
+function _handle_remote_do(socket, body)
+    try
+        body.f(body.args...; body.kwargs...)
     finally
         close(socket)
     end
