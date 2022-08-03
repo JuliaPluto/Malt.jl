@@ -8,7 +8,7 @@ these functions are not stable.
 module Malt
 
 import Base.Meta: quot
-import Base: Process, Channel, kill
+import Base: Process, Channel
 import Serialization: serialize, deserialize
 
 using Logging
@@ -22,11 +22,11 @@ end
 """
     Malt.Worker()
 
-Spawn a new worker process.
+Create a new `Worker`. A `Worker` struct is a handle to a (separate) Julia process.
 """
-function Worker()
+function Worker(;exeflags=[])
     # Spawn process
-    cmd = _get_worker_cmd()
+    cmd = _get_worker_cmd(;exeflags)
     proc = open(cmd, "w+") # TODO: Capture stdio
 
     # Block until reading the port number of the process
@@ -35,10 +35,10 @@ function Worker()
     Worker(port, proc)
 end
 
-function _get_worker_cmd(bin="julia")
+function _get_worker_cmd(exe="julia"; exeflags=[])
     script = @__DIR__() * "/worker.jl"
     # TODO: Project environment
-    `$bin $script`
+    `$exe $exeflags $script`
 end
 
 ## Use tuples instead of structs so the worker doesn't need to load additional modules.
@@ -186,12 +186,40 @@ function worker_channel(w::Worker, ex)::Channel
 end
 
 
+## Signals & Termination
+
 """
-    kill(w::Malt.Worker)
+    Malt.isrunning(w::Worker)
 
-Terminate the worker process `w`.
+Check whether the worker process `w` is running.
+"""
+isrunning(w::Worker) = Base.process_running(w.proc)
+
+
+"""
+    Malt.stop(w::Worker)
+
+Try to terminate the worker process `w`.
+"""
+stop(w::Worker) = remote_do(Base.exit, w)
+
+
+"""
+    Malt.kill(w::Worker)
+
+Terminate the worker process `w` forcefully by sending a `SIGTERM` signal.
+
+This is not the recommended way to terminate the process. See `Malt.stop`.
 """ # https://youtu.be/dyIilW_eBjc
-Base.kill(w::Worker) = remote_do(Base.exit, w)
+kill(w::Worker) = Base.kill(w.proc)
 
+
+"""
+    Malt.interrupt(w::Worker)
+
+Send an interrupt signal to the worker process. This will interrupt the
+latest request (`remotecall*` or `remote_eval*`) that was sent to the worker.
+"""
+interrupt(w::Worker) = Base.kill(w.proc, Base.SIGINT)
 
 end # module

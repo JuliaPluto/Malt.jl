@@ -2,6 +2,9 @@ using Logging
 using Serialization
 using Sockets
 
+## Allow catching InterruptExceptions
+Base.exit_on_sigint(false)
+
 # # TODO: Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto).
 # global_logger(ConsoleLogger(stderr, Logging.Debug))
 
@@ -18,24 +21,32 @@ function main()
 end
 
 function serve(server::Sockets.TCPServer)
-    try
-        while isopen(server)
+    ## FIXME: This `latest` task isn't a good hack.
+    ## It only works if the main server is disciplined about the order of requests.
+    ## That happens to be the case for Pluto, but it's not true in general.
+    latest = nothing
+    while isopen(server)
+        try
             # Wait for new request
             sock = accept(server)
             @debug(sock)
 
             # Handle request asynchronously
-            @async begin
+            latest = @async begin
                 msg = deserialize(sock)
                 @debug(msg)
                 handle(sock, msg)
             end
+        catch InterruptException
+            # Rethrow interrupt in the latest task.
+            @debug("Caught interrupt!")
+            if latest isa Task && !istaskdone(latest)
+                Base.throwto(latest, InterruptException)
+            end
+            continue
         end
-    catch InterruptException
-        @debug("Caught interrupt. bye!")
-        exit()
     end
-    @debug("Closed socket. bye!")
+    @debug("Closed server socket. bye!")
 end
 
 # Poor man's dispatch
