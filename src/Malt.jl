@@ -7,7 +7,6 @@ these functions are not stable.
 """
 module Malt
 
-import Base.Meta: quot
 import Base: Process, Channel
 import Serialization: serialize, deserialize
 
@@ -19,6 +18,16 @@ mutable struct Worker
     proc::Process
 end
 
+# TODO: Think of a better name...
+"""
+    Malt.DeadWorkerException()
+
+Malt will raise a `DeadWorkerException` when a `remotecall` is made to a `Worker`
+that has already been terminated.
+"""
+struct DeadWorkerException <: Exception end
+
+
 """
     Malt.Worker()
 
@@ -27,9 +36,9 @@ Create a new `Worker`. A `Worker` struct is a handle to a (separate) Julia proce
 function Worker(;exeflags=[])
     # Spawn process
     cmd = _get_worker_cmd(;exeflags)
-    proc = open(cmd, "w+") # TODO: Capture stdio
+    proc = open(cmd, "w+")
 
-    # Block until reading the port number of the process
+    # Block until reading the port number of the process (from its stdout)
     port_str = readline(proc)
     port = parse(UInt16, port_str)
     Worker(port, proc)
@@ -77,6 +86,8 @@ function _promise(socket)
 end
 
 function _send(w::Worker, msg)::Task
+    # Don't talk to the dead
+    !isrunning(w) && throw(DeadWorkerException())
     _promise(_send_msg(w.port, msg))
 end
 

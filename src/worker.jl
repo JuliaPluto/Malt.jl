@@ -5,15 +5,15 @@ using Sockets
 ## Allow catching InterruptExceptions
 Base.exit_on_sigint(false)
 
-# # TODO: Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto).
+# ## TODO: Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
 # global_logger(ConsoleLogger(stderr, Logging.Debug))
 
 function main()
-    # NOTE: Same port hint as Distributed
+    # Use the same port hint as Distributed
     port_hint = 9000 + (getpid() % 1000)
     port, server = listenany(port_hint)
 
-    # Write port number to stdout to let main process know where to send requests.
+    # Write port number to stdout to let main process know where to send requests
     @debug(port)
     println(stdout, port)
 
@@ -21,9 +21,9 @@ function main()
 end
 
 function serve(server::Sockets.TCPServer)
-    ## FIXME: This `latest` task isn't a good hack.
-    ## It only works if the main server is disciplined about the order of requests.
-    ## That happens to be the case for Pluto, but it's not true in general.
+    # FIXME: This `latest` task isn't a good hack.
+    # It only works if the main server is disciplined about the order of requests.
+    # That happens to be the case for Pluto, but it's not true in general.
     latest = nothing
     while isopen(server)
         try
@@ -38,7 +38,7 @@ function serve(server::Sockets.TCPServer)
                 handle(sock, msg)
             end
         catch InterruptException
-            # Rethrow interrupt in the latest task.
+            # Rethrow interrupt in the latest task
             @debug("Caught interrupt!")
             if latest isa Task && !istaskdone(latest)
                 Base.throwto(latest, InterruptException)
@@ -46,16 +46,16 @@ function serve(server::Sockets.TCPServer)
             continue
         end
     end
-    @debug("Closed server socket. bye!")
+    @debug("Closed server socket. Bye!")
 end
 
-# Poor man's dispatch
+## Poor man's dispatch
 function handle(socket, msg)
-    if msg.header == :call
+    if msg.header === :call
         _handle_call(socket, msg.body, msg.send_result)
-    elseif msg.header == :remote_do
+    elseif msg.header === :remote_do
         _handle_remote_do(socket, msg.body)
-    elseif msg.header == :channel
+    elseif msg.header === :channel
         _handle_channel(socket, msg.body)
     end
 end
@@ -64,8 +64,10 @@ function _handle_call(socket, body, send_result)
     try
         result = body.f(body.args...; body.kwargs...)
         serialize(socket, (status=:ok, result=(send_result ? result : nothing)))
+        # @debug("Sent result!", result)
     catch e
         serialize(socket, (status=:err, result=e))
+        # @debug("Sent exception!", e)
     finally
         close(socket)
     end
@@ -74,16 +76,20 @@ end
 function _handle_remote_do(socket, body)
     try
         body.f(body.args...; body.kwargs...)
+        # @debug("Evaluated", body)
     finally
         close(socket)
     end
 end
 
-function _handle_channel(socket, ex)
-    channel = eval(ex)
-    while isopen(channel)
+function _handle_channel(socket, expr)
+    channel = eval(expr)
+    while isopen(channel) && isopen(socket)
         serialize(socket, take!(channel))
     end
+    isopen(socket) && close(socket)
+    isopen(channel) && close(channel)
+    return
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
