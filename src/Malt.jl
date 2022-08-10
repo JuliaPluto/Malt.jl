@@ -52,11 +52,11 @@ end
 
 ## Use tuples instead of structs so the worker doesn't need to load additional modules.
 
-function _new_call_msg(send_result, f, args...; kwargs...)
+function _new_call_msg(send_result::Bool, f::Function, args...; kwargs...)
     (header=:call, body=(f=f, args=args, kwargs=kwargs), send_result=send_result)
 end
 
-function _new_do_msg(f, args...; kwargs...)
+function _new_do_msg(f::Function, args...; kwargs...)
     (header=:remote_do, body=(f=f, args=args, kwargs=kwargs))
 end
 
@@ -87,7 +87,7 @@ end
 
 function _send(w::Worker, msg)::Task
     # Don't talk to the dead
-    !isrunning(w) && throw(DeadWorkerException())
+    isrunning(w) || throw(DeadWorkerException())
     _promise(_send_msg(w.port, msg))
 end
 
@@ -120,6 +120,8 @@ Unlike `remotecall`, it discards the result of the computation,
 meaning there's no way to check if the computation was completed.
 """
 function remote_do(f, w::Worker, args...; kwargs...)
+    # Don't talk to the dead
+    isrunning(w) || throw(DeadWorkerException())
     _send_msg(w.port, _new_do_msg(f, args..., kwargs...))
     nothing
 end

@@ -5,8 +5,8 @@ using Sockets
 ## Allow catching InterruptExceptions
 Base.exit_on_sigint(false)
 
-# ## TODO: Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
-# global_logger(ConsoleLogger(stderr, Logging.Debug))
+## TODO: Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
+global_logger(ConsoleLogger(stderr, Logging.Debug))
 
 function main()
     # Use the same port hint as Distributed
@@ -63,11 +63,11 @@ end
 function _handle_call(socket, body, send_result)
     try
         result = body.f(body.args...; body.kwargs...)
+        # @debug("Result", result)
         serialize(socket, (status=:ok, result=(send_result ? result : nothing)))
-        # @debug("Sent result!", result)
     catch e
+        # @debug("Exception!", e)
         serialize(socket, (status=:err, result=e))
-        # @debug("Sent exception!", e)
     finally
         close(socket)
     end
@@ -75,8 +75,8 @@ end
 
 function _handle_remote_do(socket, body)
     try
+        # @debug("Remote do:", body)
         body.f(body.args...; body.kwargs...)
-        # @debug("Evaluated", body)
     finally
         close(socket)
     end
