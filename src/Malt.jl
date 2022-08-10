@@ -44,7 +44,7 @@ function Worker(;exeflags=[])
     Worker(port, proc)
 end
 
-function _get_worker_cmd(exe="julia"; exeflags=[])
+function _get_worker_cmd(exe=joinpath(Sys.BINDIR, Base.julia_exename()); exeflags=[])
     script = @__DIR__() * "/worker.jl"
     # TODO: Project environment
     `$exe $exeflags $script`
