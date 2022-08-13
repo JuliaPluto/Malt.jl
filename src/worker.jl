@@ -35,7 +35,7 @@ function serve(server::Sockets.TCPServer)
             latest = @async begin
                 msg = deserialize(sock)
                 @debug(msg)
-                handle(sock, msg)
+                handle(Val(msg.header), sock, msg)
             end
         catch InterruptException
             # Rethrow interrupt in the latest task
@@ -49,18 +49,8 @@ function serve(server::Sockets.TCPServer)
     @debug("Closed server socket. Bye!")
 end
 
-## Poor man's dispatch
-function handle(socket, msg)
-    if msg.header === :call
-        _handle_call(socket, msg.body, msg.send_result)
-    elseif msg.header === :remote_do
-        _handle_remote_do(socket, msg.body)
-    elseif msg.header === :channel
-        _handle_channel(socket, msg.body)
-    end
-end
 
-function _handle_call(socket, body, send_result)
+function handle(::Val{:call}, socket, (; body, send_result))
     try
         result = body.f(body.args...; body.kwargs...)
         # @debug("Result", result)
@@ -73,7 +63,7 @@ function _handle_call(socket, body, send_result)
     end
 end
 
-function _handle_remote_do(socket, body)
+function handle(::Val{:remote_do}, socket, (; body))
     try
         # @debug("Remote do:", body)
         body.f(body.args...; body.kwargs...)
@@ -82,8 +72,8 @@ function _handle_remote_do(socket, body)
     end
 end
 
-function _handle_channel(socket, expr)
-    channel = eval(expr)
+function handle(::Val{:channel}, socket, (; body))
+    channel = eval(body)
     while isopen(channel) && isopen(socket)
         serialize(socket, take!(channel))
     end
