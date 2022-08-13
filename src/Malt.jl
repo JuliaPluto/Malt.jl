@@ -10,7 +10,7 @@ module Malt
 import Base: Process, Channel
 import Serialization: serialize, deserialize
 
-using Logging
+# using Logging
 using Sockets
 
 mutable struct Worker
@@ -45,24 +45,27 @@ function Worker(;exeflags=[])
 end
 
 function _get_worker_cmd(exe=joinpath(Sys.BINDIR, Base.julia_exename()); exeflags=[])
-    script = @__DIR__() * "/worker.jl"
-    # TODO: Project environment
+    script = joinpath(@__DIR__, "worker.jl")
     `$exe $exeflags $script`
 end
 
 ## Use tuples instead of structs so the worker doesn't need to load additional modules.
 
-function _new_call_msg(send_result::Bool, f::Function, args...; kwargs...)
-    (header=:call, body=(f=f, args=args, kwargs=kwargs), send_result=send_result)
-end
+_new_call_msg(send_result::Bool, f::Function, args...; kwargs...) = (
+    header = :call,
+    body = (f=f, args=args, kwargs=kwargs),
+    send_result = send_result,
+)
 
-function _new_do_msg(f::Function, args...; kwargs...)
-    (header=:remote_do, body=(f=f, args=args, kwargs=kwargs))
-end
+_new_do_msg(f::Function, args...; kwargs...) = (
+    header = :remote_do,
+    body = (f=f, args=args, kwargs=kwargs),
+)
 
-function _new_channel_msg(expr)
-    (header=:channel, body=expr)
-end
+_new_channel_msg(expr) = (
+    header = :channel,
+    body = expr,
+)
 
 function _send_msg(port::UInt16, msg)
     socket = connect(port)
@@ -70,17 +73,19 @@ function _send_msg(port::UInt16, msg)
     return socket
 end
 
+# FIXME:
+# `response.result` can be the result of a computation, or an Exception.
+# If it's an exception defined in Base, we could rethrow it here.
+# but what should be done if it's an exception that's NOT defined in Base?
+#
+# Also, these exceptions are wrapped in a `TaskFailedException`,
+# which seems kind of ugly. How to unwrap them?
+#
+# This is not a problem when using Pluto, since Pluto itself handles exceptions.
 function _promise(socket)
     @async begin
         response = deserialize(socket)
         close(socket)
-        # FIXME:
-        # `response.result` can be the result of a computation, or an Exception.
-        # If it's an exception defined in Base, we could rethrow it here,
-        # but what should be done if it's an exception that's NOT defined in Base???
-        #
-        # Also, these exceptions are wrapped in a `TaskFailedException`,
-        # which seems kind of ugly. How to unwrap them?
         response.result
     end
 end
@@ -150,43 +155,44 @@ end
 ## Eval variants
 
 """
-    Malt.remote_eval([m], w::Worker, ex)
+    Malt.remote_eval([m], w::Worker, expr)
 
-Evaluate expression `ex` under module `m` on the worker `w`.
-If no module is specified, `ex` is evaluated under `Main`.
+Evaluate expression `expr` under module `m` on the worker `w`.
+If no module is specified, `expr` is evaluated under `Main`.
 `Malt.remote_eval` is asynchronous, like `Malt.remotecall`.
 
-The module `m` and the type of `ex` must be defined in both the main process and the worker.
+The module `m` and the type of the result of `expr` must be defined in both the
+main process and the worker.
 """
-remote_eval(m::Module, w::Worker, ex) = remotecall(Core.eval, w, m, ex)
-remote_eval(w::Worker, ex) = remote_eval(Main, w, ex)
+remote_eval(m::Module, w::Worker, expr) = remotecall(Core.eval, w, m, expr)
+remote_eval(w::Worker, expr) = remote_eval(Main, w, expr)
 
 
 """
-Shorthand for `fetch(Malt.remote_eval(…))`, Blocks and returns the result of evaluating `ex`.
+Shorthand for `fetch(Malt.remote_eval(…))`. Blocks and returns the resulting value.
 """
-remote_eval_fetch(m::Module, w::Worker, ex) = remotecall_fetch(Core.eval, w, m, ex)
-remote_eval_fetch(w::Worker, ex) = remote_eval_fetch(Main, w, ex)
+remote_eval_fetch(m::Module, w::Worker, expr) = remotecall_fetch(Core.eval, w, m, expr)
+remote_eval_fetch(w::Worker, expr) = remote_eval_fetch(Main, w, expr)
 
 
 """
 Shorthand for `wait(Malt.remote_eval(…))`. Blocks and discards the resulting value.
 """
-remote_eval_wait(m::Module, w::Worker, ex) = remotecall_wait(Core.eval, w, m, ex)
-remote_eval_wait(w::Worker, ex) = remote_eval_wait(Main, w, ex)
+remote_eval_wait(m::Module, w::Worker, expr) = remotecall_wait(Core.eval, w, m, expr)
+remote_eval_wait(w::Worker, expr) = remote_eval_wait(Main, w, expr)
 
 
 """
-    Malt.worker_channel(w::Worker, ex)
+    Malt.worker_channel(w::Worker, expr)
 
-Create a channel to communicate with worker `w`. `ex` must be an expression
-that evaluates to a Channel. `ex` should assign the Channel to a (global) variable
+Create a channel to communicate with worker `w`. `expr` must be an expression
+that evaluates to a Channel. `expr` should assign the Channel to a (global) variable
 so the worker has a handle that can be used to send messages back to the manager.
 """
-function worker_channel(w::Worker, ex)::Channel
+function worker_channel(w::Worker, expr)::Channel
     # Send message
     s = connect(w.port)
-    serialize(s, _new_channel_msg(ex))
+    serialize(s, _new_channel_msg(expr))
 
     # Return channel
     Channel(function(channel)
@@ -202,11 +208,11 @@ end
 ## Signals & Termination
 
 """
-    Malt.isrunning(w::Worker)
+    Malt.isrunning(w::Worker)::Bool
 
 Check whether the worker process `w` is running.
 """
-isrunning(w::Worker) = Base.process_running(w.proc)
+isrunning(w::Worker)::Bool = Base.process_running(w.proc)
 
 
 """
