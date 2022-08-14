@@ -20,8 +20,6 @@ end
 
 # TODO: Think of a better name...
 """
-    Malt.DeadWorkerException()
-
 Malt will raise a `DeadWorkerException` when a `remotecall` is made to a `Worker`
 that has already been terminated.
 """
@@ -32,6 +30,13 @@ struct DeadWorkerException <: Exception end
     Malt.Worker()
 
 Create a new `Worker`. A `Worker` struct is a handle to a (separate) Julia process.
+
+# Examples
+
+```julia-repl
+julia> w = Malt.worker()
+Malt.Worker(0x0000, Process(`…`, ProcessRunning))
+```
 """
 function Worker(;exeflags=[])
     # Spawn process
@@ -97,12 +102,6 @@ function _send(w::Worker, msg)::Task
 end
 
 
-## Define 4 remote calls:
-## remotecall:       Async,    returns value
-## remote_do:        Async,    returns nothing
-## remotecall_fetch: Blocking, returns value
-## remotecall_wait:  Blocking, returns nothing
-
 """
     Malt.remotecall(f, w::Worker, args...; kwargs...)
 
@@ -111,6 +110,15 @@ Returns a task that acts as a promise; the result value of the task is the
 result of the computation.
 
 The function `f` must already be defined in the namespace of `w`.
+
+# Examples
+
+```julia-repl
+julia> promise = Malt.remotecall(uppercase ∘ *, w, "I ", "declare ", "bankruptcy!");
+
+julia> fetch(promise)
+"I DECLARE BANKRUPTCY!"
+```
 """
 function remotecall(f, w::Worker, args...; kwargs...)
     _send(w, _new_call_msg(true, f, args..., kwargs...))
@@ -163,6 +171,18 @@ If no module is specified, `expr` is evaluated under `Main`.
 
 The module `m` and the type of the result of `expr` must be defined in both the
 main process and the worker.
+
+# Examples
+
+```julia-repl
+julia> Malt.remote_eval(w, quote
+    x = "x is a global variable"
+end)
+
+julia> Malt.remote_eval_fetch(w, :x)
+"x is a global variable"
+```
+
 """
 remote_eval(m::Module, w::Worker, expr) = remotecall(Core.eval, w, m, expr)
 remote_eval(w::Worker, expr) = remote_eval(Main, w, expr)
