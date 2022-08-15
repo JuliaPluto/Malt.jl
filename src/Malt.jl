@@ -13,10 +13,6 @@ import Serialization: serialize, deserialize
 # using Logging
 using Sockets
 
-mutable struct Worker
-    port::UInt16
-    proc::Process
-end
 
 # TODO: Think of a better name...
 """
@@ -38,15 +34,20 @@ julia> w = Malt.worker()
 Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 ```
 """
-function Worker(;exeflags=[])
-    # Spawn process
-    cmd = _get_worker_cmd(;exeflags)
-    proc = open(cmd, "w+")
+struct Worker
+    port::UInt16
+    proc::Process
 
-    # Block until reading the port number of the process (from its stdout)
-    port_str = readline(proc)
-    port = parse(UInt16, port_str)
-    Worker(port, proc)
+    function Worker(;exeflags=[])
+        # Spawn process
+        cmd = _get_worker_cmd(;exeflags)
+        proc = open(cmd, "w+")
+
+        # Block until reading the port number of the process (from its stdout)
+        port_str = readline(proc)
+        port = parse(UInt16, port_str)
+        new(port, proc)
+    end
 end
 
 function _get_worker_cmd(exe=joinpath(Sys.BINDIR, Base.julia_exename()); exeflags=[])
