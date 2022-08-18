@@ -1,7 +1,5 @@
 """
-Malt is a  minimal multi-processing package for Julia.
-
-Malt doesn't export anything, use qualified names instead.
+The Malt module doesn't export anything, use qualified names instead.
 Internal functions are marked with a leading underscore,
 these functions are not stable.
 """

@@ -1,6 +1,6 @@
 # Malt.jl
 
-Malt is a minimal multiprocessing package for Julia.
+Malt is a multiprocessing package for Julia.
 You can use Malt to create Julia processes, and to perform computations in those processes.
 Unlike the standard library package [`Distributed.jl`](https://docs.julialang.org/en/v1/stdlib/Distributed/),
 Malt is focused on process sandboxing, not distributed computing.
@@ -24,6 +24,9 @@ unless you set up a communication mechanism between them explicitly.
 Workers have separate memory, separate namespaces, and they can have separate project environments;
 meaning they can load separate packages, or different versions of the same package.
 
+Since workers are separate Julia processes, the number of workers you can create,
+and whether worker execution is multi-threaded will depend on your operating system.
+
 ```@docs
 Malt.Worker
 ```
@@ -36,15 +39,15 @@ The easiest way to execute code in a worker is with the `remotecall*` functions.
 
 Depending on the computation you want to perform, you might want to get the result
 synchronously or asynchronously; you might want to store the result or throw it away.
-The following table explains the remotecall functions according to their timing and return value:
+The following table lists each function according to its scheduling and return value:
 
 
-| Function                | Scheduling | Return value    |
-|:------------------------|:-----------|:----------------|
-| `Malt.remotecall`       | Async      | <value>         |
-| `Malt.remote_do`        | Async      | `nothing`       |
-| `Malt.remotecall_fetch` | Blocking   | <value>         |
-| `Malt.remotecall_wait`  | Blocking   | `nothing`       |
+| Function                        | Scheduling | Return value    |
+|:--------------------------------|:-----------|:----------------|
+| [`Malt.remotecall`](@ref)       | Async      | <value>         |
+| [`Malt.remote_do`](@ref)        | Async      | `nothing`       |
+| [`Malt.remotecall_fetch`](@ref) | Blocking   | <value>         |
+| [`Malt.remotecall_wait`](@ref)  | Blocking   | `nothing`       |
 
 
 ```@docs
