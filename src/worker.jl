@@ -5,8 +5,8 @@ using Sockets
 ## Allow catching InterruptExceptions
 Base.exit_on_sigint(false)
 
-## TODO: Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
-global_logger(ConsoleLogger(stderr, Logging.Debug))
+# ## TODO: Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
+# global_logger(ConsoleLogger(stderr, Logging.Debug))
 
 function main()
     # Use the same port hint as Distributed
@@ -50,11 +50,12 @@ function serve(server::Sockets.TCPServer)
 end
 
 
-function handle(::Val{:call}, socket, (; body, send_result))
+function handle(::Val{:call}, socket, msg)
+    body = msg.body # Don't use destructuring to support v1.6
     try
         result = body.f(body.args...; body.kwargs...)
         # @debug("Result", result)
-        serialize(socket, (status=:ok, result=(send_result ? result : nothing)))
+        serialize(socket, (status=:ok, result=(msg.send_result ? result : nothing)))
     catch e
         # @debug("Exception!", e)
         serialize(socket, (status=:err, result=e))
@@ -63,7 +64,8 @@ function handle(::Val{:call}, socket, (; body, send_result))
     end
 end
 
-function handle(::Val{:remote_do}, socket, (; body))
+function handle(::Val{:remote_do}, socket, msg)
+    body = msg.body
     try
         # @debug("Remote do:", body)
         body.f(body.args...; body.kwargs...)
@@ -72,8 +74,8 @@ function handle(::Val{:remote_do}, socket, (; body))
     end
 end
 
-function handle(::Val{:channel}, socket, (; body))
-    channel = eval(body)
+function handle(::Val{:channel}, socket, msg)
+    channel = eval(msg.body)
     while isopen(channel) && isopen(socket)
         serialize(socket, take!(channel))
     end
