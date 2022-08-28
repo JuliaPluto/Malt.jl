@@ -90,6 +90,6 @@ Malt.isrunning
 Malt.stop
 Malt.kill
 Malt.interrupt
-Malt.DeadWorkerException
+Malt.TerminatedWorkerException
 ```
 

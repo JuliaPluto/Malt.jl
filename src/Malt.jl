@@ -12,12 +12,11 @@ import Serialization: serialize, deserialize
 using Sockets
 
 
-# TODO: Think of a better name...
 """
-Malt will raise a `DeadWorkerException` when a `remotecall` is made to a `Worker`
+Malt will raise a `TerminatedWorkerException` when a `remotecall` is made to a `Worker`
 that has already been terminated.
 """
-struct DeadWorkerException <: Exception end
+struct TerminatedWorkerException <: Exception end
 
 
 """
@@ -96,7 +95,7 @@ end
 
 function _send(w::Worker, msg)::Task
     # Don't talk to the dead
-    isrunning(w) || throw(DeadWorkerException())
+    isrunning(w) || throw(TerminatedWorkerException())
     _promise(_send_msg(w.port, msg))
 end
 
@@ -133,7 +132,7 @@ meaning there's no way to check if the computation was completed.
 """
 function remote_do(f, w::Worker, args...; kwargs...)
     # Don't talk to the dead
-    isrunning(w) || throw(DeadWorkerException())
+    isrunning(w) || throw(TerminatedWorkerException())
     _send_msg(w.port, _new_do_msg(f, args..., kwargs...))
     nothing
 end
