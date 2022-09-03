@@ -31,7 +31,7 @@ julia> w = Malt.worker()
 Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 ```
 """
-struct Worker
+mutable struct Worker
     port::UInt16
     proc::Process
 
@@ -43,7 +43,12 @@ struct Worker
         # Block until reading the port number of the process (from its stdout)
         port_str = readline(proc)
         port = parse(UInt16, port_str)
-        new(port, proc)
+
+        # There's no reason to keep the worker process alive after the manager loses its handle.
+        w = finalizer(w -> @async(stop(w)), new(port, proc))
+        atexit(() -> stop(w))
+
+        return w
     end
 end
 
@@ -234,11 +239,20 @@ isrunning(w::Worker)::Bool = Base.process_running(w.proc)
 
 
 """
-    Malt.stop(w::Worker)
+    Malt.stop(w::Worker)::Bool
 
 Try to terminate the worker process `w`.
+If `w` is still alive, and a termination message is sent, `stop` returns true.
+If `w` is already dead, `stop` returns `false`.
 """
-stop(w::Worker) = remote_do(Base.exit, w)
+function stop(w::Worker)
+    if isrunning(w)
+        remote_do(Base.exit, w)
+        true
+    else
+        false
+    end
+end
 
 
 """
