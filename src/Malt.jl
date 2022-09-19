@@ -92,9 +92,15 @@ end
 # This is not a problem when using Pluto, since Pluto itself handles exceptions.
 function _promise(socket)
     @async begin
-        response = deserialize(socket)
-        close(socket)
-        response.result
+        # Close socket even if there's a serialization exception
+        try
+            response = deserialize(socket)
+            response.result
+        catch e
+            rethrow(e)
+        finally
+            close(socket)
+        end
     end
 end
 
