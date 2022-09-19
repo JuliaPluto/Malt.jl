@@ -81,15 +81,7 @@ function _send_msg(port::UInt16, msg)
     return socket
 end
 
-# FIXME:
-# `response.result` can be the result of a computation, or an Exception.
-# If it's an exception defined in Base, we could rethrow it here.
-# but what should be done if it's an exception that's NOT defined in Base?
-#
-# Also, these exceptions are wrapped in a `TaskFailedException`,
-# which seems kind of ugly. How to unwrap them?
-#
-# This is not a problem when using Pluto, since Pluto itself handles exceptions.
+# TODO: Unwrap TaskFailedExceptions
 function _promise(socket)
     @async begin
         # Close socket even if there's a serialization exception
