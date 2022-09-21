@@ -81,25 +81,26 @@ function _send_msg(port::UInt16, msg)
     return socket
 end
 
-# TODO: Unwrap TaskFailedExceptions
-function _promise(socket)
-    @async begin
-        # Close socket even if there's a serialization exception
-        try
-            response = deserialize(socket)
-            response.result
-        catch e
-            rethrow(e)
-        finally
-            close(socket)
-        end
+function _recv(socket)
+    try
+        response = deserialize(socket)
+        response.result
+    catch e
+        rethrow(e)
+    finally
+        close(socket)
     end
 end
 
-function _send(w::Worker, msg)::Task
-    # Don't talk to the dead
+function _send(w::Worker, msg)
     isrunning(w) || throw(TerminatedWorkerException())
-    _promise(_send_msg(w.port, msg))
+    _recv(_send_msg(w.port, msg))
+end
+
+# TODO: Unwrap TaskFailedExceptions
+function _send_async(w::Worker, msg)::Task
+    isrunning(w) || throw(TerminatedWorkerException())
+    @async(_recv(_send_msg(w.port, msg)))
 end
 
 
@@ -122,7 +123,7 @@ julia> fetch(promise)
 ```
 """
 function remotecall(f, w::Worker, args...; kwargs...)
-    _send(w, _new_call_msg(true, f, args..., kwargs...))
+    _send_async(w, _new_call_msg(true, f, args..., kwargs...))
 end
 
 
@@ -147,7 +148,7 @@ end
 Shorthand for `fetch(Malt.remotecall(…))`. Blocks and then returns the result of the remote call.
 """
 function remotecall_fetch(f, w::Worker, args...; kwargs...)
-    fetch(_send(w, _new_call_msg(true, f, args..., kwargs...)))
+    _send(w, _new_call_msg(true, f, args..., kwargs...))
 end
 
 
@@ -157,7 +158,7 @@ end
 Shorthand for `wait(Malt.remotecall(…))`. Blocks and discards the resulting value.
 """
 function remotecall_wait(f, w::Worker, args...; kwargs...)
-    wait(_send(w, _new_call_msg(false, f, args..., kwargs...)))
+    _send(w, _new_call_msg(false, f, args..., kwargs...))
 end
 
 
