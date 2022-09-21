@@ -103,7 +103,7 @@ end
         struct $(stub_type_name) end
     end)
 
-    @test_throws(TaskFailedException,
+    @test_throws(Exception,
         m.remote_eval_fetch(w, quote
             $stub_type_name()
         end),
@@ -118,7 +118,7 @@ end
         struct $stub_type_name2 <: Exception end
     end)
 
-    @test_throws(TaskFailedException,
+    @test_throws(Exception,
         m.remote_eval_fetch(w, quote
             throw($stub_type_name2())
         end),
@@ -128,7 +128,7 @@ end
     ## Catching unknown exceptions and returning them as values also causes an exception.
     ## (just like any other unknown type).
 
-    @test_throws(TaskFailedException,
+    @test_throws(Exception,
         m.remote_eval_fetch(w, quote
             try
                 throw($stub_type_name2())
