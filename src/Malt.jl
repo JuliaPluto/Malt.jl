@@ -274,6 +274,13 @@ kill(w::Worker) = Base.kill(w.proc)
 Send an interrupt signal to the worker process. This will interrupt the
 latest request (`remotecall*` or `remote_eval*`) that was sent to the worker.
 """
-interrupt(w::Worker) = Base.kill(w.proc, Base.SIGINT)
+function interrupt(w::Worker)
+    if Sys.iswindows()
+        isrunning(w) || throw(TerminatedWorkerException())
+        _send_msg(w.port, (header=:interrupt,))
+    else
+        Base.kill(w.proc, Base.SIGINT)
+    end
+end
 
 end # module
