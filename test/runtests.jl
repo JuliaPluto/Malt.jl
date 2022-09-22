@@ -13,7 +13,7 @@ using Test
 
     # Terminating workers takes about 0.5s
     m.stop(w)
-    sleep(1)
+    sleep(2)
     @test m.isrunning(w) === false
 end
 
@@ -74,7 +74,7 @@ end
     @test m.isrunning(w) === true
 
     m.stop(w)
-    sleep(1)
+    sleep(2)
     @test m.isrunning(w) === false
 end
 
