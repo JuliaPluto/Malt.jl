@@ -61,18 +61,22 @@ end
 
 _new_call_msg(send_result::Bool, f::Function, args...; kwargs...) = (
     header = :call,
-    body = (f=f, args=args, kwargs=kwargs),
+    f=f,
+    args=args,
+    kwargs=kwargs,
     send_result = send_result,
 )
 
 _new_do_msg(f::Function, args...; kwargs...) = (
     header = :remote_do,
-    body = (f=f, args=args, kwargs=kwargs),
+    f=f,
+    args=args,
+    kwargs=kwargs,
 )
 
 _new_channel_msg(expr) = (
     header = :channel,
-    body = expr,
+    expr = expr,
 )
 
 function _send_msg(port::UInt16, msg)

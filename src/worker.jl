@@ -51,9 +51,8 @@ end
 
 
 function handle(::Val{:call}, socket, msg)
-    body = msg.body # Don't use destructuring to support v1.6
     try
-        result = body.f(body.args...; body.kwargs...)
+        result = msg.f(msg.args...; msg.kwargs...)
         # @debug("Result", result)
         serialize(socket, (status=:ok, result=(msg.send_result ? result : nothing)))
     catch e
@@ -65,17 +64,15 @@ function handle(::Val{:call}, socket, msg)
 end
 
 function handle(::Val{:remote_do}, socket, msg)
-    body = msg.body
     try
-        # @debug("Remote do:", body)
-        body.f(body.args...; body.kwargs...)
+        msg.f(msg.args...; msg.kwargs...)
     finally
         close(socket)
     end
 end
 
 function handle(::Val{:channel}, socket, msg)
-    channel = eval(msg.body)
+    channel = eval(msg.expr)
     while isopen(channel) && isopen(socket)
         serialize(socket, take!(channel))
     end
