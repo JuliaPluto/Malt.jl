@@ -19,4 +19,4 @@ jobs:
             - uses: JuliaRegistries/TagBot@v1
               with:
                   token: ${{ secrets.GITHUB_TOKEN }}
-                  lookback: 30
+                  lookback: 300
