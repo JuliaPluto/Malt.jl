@@ -35,26 +35,24 @@ function serve(server::Sockets.TCPServer)
             latest = @async begin
                 msg = deserialize(sock)
                 if get(msg, :header, nothing) === :interrupt
-                    if latest isa Task && !istaskdone(latest)
-                        Base.throwto(latest, InterruptException)
-                    end
+                    interrupt(latest)
                 else
                     @debug(msg)
                     handle(Val(msg.header), sock, msg)
                 end
             end
         catch InterruptException
-            # Rethrow interrupt in the latest task
             @debug("Caught interrupt!")
-            if latest isa Task && !istaskdone(latest)
-                Base.throwto(latest, InterruptException)
-            end
+            interrupt(latest)
             continue
         end
     end
     @debug("Closed server socket. Bye!")
 end
 
+# Check if task is still running before throwing interrupt
+interrupt(t::Task) = istaskdone(t) || Base.throwto(t, InterruptException)
+interrupt(::Nothing) = nothing
 
 function handle(::Val{:call}, socket, msg)
     try
