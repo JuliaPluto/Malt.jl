@@ -5,7 +5,9 @@ using Sockets
 ## Allow catching InterruptExceptions
 Base.exit_on_sigint(false)
 
-# ## TODO: Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
+# ## TODO:
+# ## * Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
+# ## * Define a worker specific LogLevel
 # global_logger(ConsoleLogger(stderr, Logging.Debug))
 
 function main()
@@ -14,7 +16,7 @@ function main()
     port, server = listenany(port_hint)
 
     # Write port number to stdout to let main process know where to send requests
-    @debug(port)
+    @debug("WORKER: new port", port)
     println(stdout, port)
 
     serve(server)
@@ -37,17 +39,17 @@ function serve(server::Sockets.TCPServer)
                 if get(msg, :header, nothing) === :interrupt
                     interrupt(latest)
                 else
-                    @debug(msg)
+                    @debug("WORKER: Received message", msg)
                     handle(Val(msg.header), sock, msg)
                 end
             end
         catch InterruptException
-            @debug("Caught interrupt!")
+            @debug("WORKER: Caught interrupt!")
             interrupt(latest)
             continue
         end
     end
-    @debug("Closed server socket. Bye!")
+    @debug("WORKER: Closed server socket. Bye!")
 end
 
 # Check if task is still running before throwing interrupt
@@ -57,10 +59,10 @@ interrupt(::Nothing) = nothing
 function handle(::Val{:call}, socket, msg)
     try
         result = msg.f(msg.args...; msg.kwargs...)
-        # @debug("Result", result)
+        # @debug("WORKER: Evaluated result", result)
         serialize(socket, (status=:ok, result=(msg.send_result ? result : nothing)))
     catch e
-        # @debug("Exception!", e)
+        # @debug("WORKER: Got exception!", e)
         serialize(socket, (status=:err, result=e))
     end
 end
