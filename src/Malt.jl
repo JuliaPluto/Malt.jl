@@ -34,6 +34,7 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 mutable struct Worker
     port::UInt16
     proc::Process
+    sync_socket::Union{TCPSocket, Nothing}
 
     function Worker(;exeflags=[])
         # Spawn process
@@ -45,7 +46,7 @@ mutable struct Worker
         port = parse(UInt16, port_str)
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
-        w = finalizer(w -> @async(stop(w)), new(port, proc))
+        w = finalizer(w -> @async(stop(w)), new(port, proc, nothing))
         atexit(() -> stop(w))
 
         return w
@@ -88,15 +89,23 @@ end
 function _recv(socket)
     try
         response = deserialize(socket)
-        response.result
+        response #.result
     catch e
+        close(socket)
         rethrow(e)
     end
 end
 
-function _send(w::Worker, msg)
+function _send_sync(w::Worker, msg)
     isrunning(w) || throw(TerminatedWorkerException())
-    _recv(_send_msg(w.port, msg))
+
+    # Create or replace socket if necessary
+    if !(isa(w.sync_socket, TCPSocket) && isopen(w.sync_socket))
+        w.sync_socket = connect(w.port)
+    end
+
+    serialize(w.sync_socket, msg)
+    _recv(w.sync_socket)
 end
 
 # TODO: Unwrap TaskFailedExceptions
@@ -150,7 +159,7 @@ end
 Shorthand for `fetch(Malt.remotecall(…))`. Blocks and then returns the result of the remote call.
 """
 function remotecall_fetch(f, w::Worker, args...; kwargs...)
-    _send(w, _new_call_msg(true, f, args..., kwargs...))
+    _send_sync(w, _new_call_msg(true, f, args..., kwargs...))
 end
 
 
@@ -160,7 +169,7 @@ end
 Shorthand for `wait(Malt.remotecall(…))`. Blocks and discards the resulting value.
 """
 function remotecall_wait(f, w::Worker, args...; kwargs...)
-    _send(w, _new_call_msg(false, f, args..., kwargs...))
+    _send_sync(w, _new_call_msg(false, f, args..., kwargs...))
 end
 
 
