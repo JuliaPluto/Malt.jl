@@ -33,14 +33,21 @@ function serve(server::Sockets.TCPServer)
 
             # Handle request asynchronously
             latest = @async begin
-                msg = deserialize(sock)
-                if get(msg, :header, nothing) === :interrupt
-                    if latest isa Task && !istaskdone(latest)
-                        Base.throwto(latest, InterruptException)
+                while isopen(sock) && !eof(sock)
+                    try
+                        msg = deserialize(sock)
+                        if get(msg, :header, nothing) === :interrupt
+                            if latest isa Task && !istaskdone(latest)
+                                Base.throwto(latest, InterruptException)
+                            end
+                        else
+                            @debug(msg)
+                            handle(Val(msg.header), sock, msg)
+                        end
+                    catch e
+                        @error(e)
+                        break
                     end
-                else
-                    @debug(msg)
-                    handle(Val(msg.header), sock, msg)
                 end
             end
         catch InterruptException

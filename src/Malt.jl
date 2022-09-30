@@ -34,6 +34,7 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 mutable struct Worker
     port::UInt16
     proc::Process
+    sync_sock::Union{TCPSocket, Nothing}
 
     function Worker(;exeflags=[])
         # Spawn process
@@ -45,7 +46,7 @@ mutable struct Worker
         port = parse(UInt16, port_str)
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
-        w = finalizer(w -> @async(stop(w)), new(port, proc))
+        w = finalizer(w -> @async(stop(w)), new(port, proc, nothing))
         atexit(() -> stop(w))
 
         return w
@@ -87,8 +88,10 @@ end
 
 function _recv(socket)
     try
-        response = deserialize(socket)
-        response.result
+        if !eof(socket)
+            response = deserialize(socket)
+            return response.result
+        end
     catch e
         rethrow(e)
     finally
@@ -98,7 +101,13 @@ end
 
 function _send(w::Worker, msg)
     isrunning(w) || throw(TerminatedWorkerException())
-    _recv(_send_msg(w.port, msg))
+
+    if !(isa(w.sync_sock, TCPSocket) && isopen(w.sync_sock))
+        w.sync_sock = connect(w.port)
+    end
+
+    serialize(w.sync_sock, msg)
+    _recv(w.sync_sock)
 end
 
 # TODO: Unwrap TaskFailedExceptions
