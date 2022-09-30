@@ -94,8 +94,6 @@ function _recv(socket)
         end
     catch e
         rethrow(e)
-    finally
-        close(socket)
     end
 end
 
@@ -234,7 +232,6 @@ function worker_channel(w::Worker, expr)::Channel
         while isopen(channel) && isopen(s)
             put!(channel, deserialize(s))
         end
-        close(s)
         return
     end)
 end
