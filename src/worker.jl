@@ -35,10 +35,11 @@ function serve(server::Sockets.TCPServer)
 
             # Handle request asynchronously
             latest = @async begin
-                if !eof(sock)
+                while isopen(sock) && !eof(sock)
                     msg = deserialize(sock)
                     if get(msg, :header, nothing) === :interrupt
                         interrupt(latest)
+                        break
                     else
                         @debug("WORKER: Received message", msg)
                         handle(Val(msg.header), sock, msg)
@@ -66,8 +67,6 @@ function handle(::Val{:call}, socket, msg)
     catch e
         # @debug("WORKER: Got exception!", e)
         serialize(socket, (status=:err, result=e))
-    finally
-        close(socket)
     end
 end
 
