@@ -171,10 +171,9 @@ end
 ## Eval variants
 
 """
-    Malt.remote_eval([m], w::Worker, expr)
+    Malt.remote_eval(m, w::Worker, expr)
 
 Evaluate expression `expr` under module `m` on the worker `w`.
-If no module is specified, `expr` is evaluated under `Main`.
 `Malt.remote_eval` is asynchronous, like `Malt.remotecall`.
 
 The module `m` and the type of the result of `expr` must be defined in both the
@@ -193,21 +192,18 @@ julia> Malt.remote_eval_fetch(w, :x)
 
 """
 remote_eval(m::Module, w::Worker, expr) = remotecall(Core.eval, w, m, expr)
-remote_eval(w::Worker, expr) = remote_eval(Main, w, expr)
 
 
 """
 Shorthand for `fetch(Malt.remote_eval(…))`. Blocks and returns the resulting value.
 """
 remote_eval_fetch(m::Module, w::Worker, expr) = remotecall_fetch(Core.eval, w, m, expr)
-remote_eval_fetch(w::Worker, expr) = remote_eval_fetch(Main, w, expr)
 
 
 """
 Shorthand for `wait(Malt.remote_eval(…))`. Blocks and discards the resulting value.
 """
 remote_eval_wait(m::Module, w::Worker, expr) = remotecall_wait(Core.eval, w, m, expr)
-remote_eval_wait(w::Worker, expr) = remote_eval_wait(Main, w, expr)
 
 
 """
