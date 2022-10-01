@@ -57,6 +57,9 @@ function _get_worker_cmd(exe=joinpath(Sys.BINDIR, Base.julia_exename()); exeflag
     `$exe $exeflags $script`
 end
 
+_check(w::Worker) = isrunning(w) || throw(TerminatedWorkerException())
+
+
 ## Use tuples instead of structs so the worker doesn't need to load additional modules.
 
 _new_call_msg(send_result::Bool, f::Function, args...; kwargs...) = (
@@ -95,13 +98,13 @@ function _recv(socket)
 end
 
 function _send(w::Worker, msg)
-    isrunning(w) || throw(TerminatedWorkerException())
+    _check(w)
     _recv(_send_msg(w.port, msg))
 end
 
 # TODO: Unwrap TaskFailedExceptions
 function _send_async(w::Worker, msg)::Task
-    isrunning(w) || throw(TerminatedWorkerException())
+    _check(w)
     @async(_recv(_send_msg(w.port, msg)))
 end
 
@@ -137,8 +140,7 @@ Unlike `remotecall`, it discards the result of the computation,
 meaning there's no way to check if the computation was completed.
 """
 function remote_do(f, w::Worker, args...; kwargs...)
-    # Don't talk to the dead
-    isrunning(w) || throw(TerminatedWorkerException())
+    _check(w)
     _send_msg(w.port, _new_do_msg(f, args..., kwargs...))
     nothing
 end
@@ -273,7 +275,7 @@ latest request (`remotecall*` or `remote_eval*`) that was sent to the worker.
 """
 function interrupt(w::Worker)
     if Sys.iswindows()
-        isrunning(w) || throw(TerminatedWorkerException())
+        _check(w)
         _send_msg(w.port, (header=:interrupt,))
     else
         Base.kill(w.proc, Base.SIGINT)
