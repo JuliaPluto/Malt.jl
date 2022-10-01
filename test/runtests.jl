@@ -31,15 +31,15 @@ end
     w = m.Worker()
     @test m.isrunning(w) === true
 
-    m.remote_eval_wait(w, :(module Stub end))
+    m.remote_eval_wait(Main, w, :(module Stub end))
 
     str= "x is in Stub"
 
-    m.remote_eval_wait(w, quote
+    m.remote_eval_wait(Main, w, quote
         Core.eval(Stub, :(x = $$str))
     end)
 
-    @test m.remote_eval_fetch(w, :(Stub.x)) == str
+    @test m.remote_eval_fetch(Main, w, :(Stub.x)) == str
 
     m.stop(w)
 end
@@ -53,7 +53,7 @@ end
     @testset for _i in 1:100
         n = rand(Int)
 
-        m.remote_eval(w, quote
+        m.remote_eval(Main, w, quote
             put!(rc, $(n))
         end)
 
@@ -66,7 +66,7 @@ end
 @testset "Signals" begin
     w = m.Worker()
 
-    m.remote_eval(w, quote
+    m.remote_eval(Main, w, quote
         sleep(1_000_000)
     end)
 
@@ -84,14 +84,14 @@ end
     ## Mutually Known errors are not thrown, but returned as values.
 
     @test isa(
-        m.remote_eval_fetch(w, quote
+        m.remote_eval_fetch(Main, w, quote
             sqrt(-1)
         end),
         DomainError,
     )
 
     @test isa(
-        m.remote_eval_fetch(w, quote
+        m.remote_eval_fetch(Main, w, quote
             error("Julia stack traces are bad. GL 😉")
         end),
         ErrorException,
@@ -102,13 +102,13 @@ end
 
     stub_type_name = gensym(:NonLocalType)
 
-    m.remote_eval_wait(w, quote
+    m.remote_eval_wait(Main, w, quote
         struct $(stub_type_name) end
     end)
 
     @test_throws(
         Exception,
-        m.remote_eval_fetch(w, quote
+        m.remote_eval_fetch(Main, w, quote
             $stub_type_name()
         end),
     )
@@ -118,13 +118,13 @@ end
 
     stub_type_name2 = gensym(:NonLocalException)
 
-    m.remote_eval_wait(w, quote
+    m.remote_eval_wait(Main, w, quote
         struct $stub_type_name2 <: Exception end
     end)
 
     @test_throws(
         Exception,
-        m.remote_eval_fetch(w, quote
+        m.remote_eval_fetch(Main, w, quote
             throw($stub_type_name2())
         end),
     )
@@ -134,7 +134,7 @@ end
 
     @test_throws(
         Exception,
-        m.remote_eval_fetch(w, quote
+        m.remote_eval_fetch(Main, w, quote
             try
                 throw($stub_type_name2())
             catch e
