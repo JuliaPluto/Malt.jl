@@ -64,14 +64,16 @@ function handle(::Val{:call}, socket, msg)
     catch e
         # @debug("WORKER: Got exception!", e)
         serialize(socket, (status=:err, result=e))
+    finally
+        close(socket)
     end
 end
 
 function handle(::Val{:remote_do}, socket, msg)
     try
         msg.f(msg.args...; msg.kwargs...)
-    catch e
-        nothing
+    finally
+        close(socket)
     end
 end
 
@@ -80,7 +82,7 @@ function handle(::Val{:channel}, socket, msg)
     while isopen(channel) && isopen(socket)
         serialize(socket, take!(channel))
     end
-
+    isopen(socket) && close(socket)
     isopen(channel) && close(channel)
     return
 end
