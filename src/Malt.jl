@@ -90,8 +90,10 @@ end
 
 function _recv(socket)
     try
-        response = deserialize(socket)
-        response.result
+        if !eof(socket)
+            response = deserialize(socket)
+            response.result
+        end
     catch e
         rethrow(e)
     finally
@@ -220,7 +222,7 @@ function worker_channel(w::Worker, expr)::Channel
 
     # Return channel
     Channel(function(channel)
-        while isopen(channel) && isopen(s)
+        while isopen(channel) && isopen(s) && !eof(s)
             put!(channel, deserialize(s))
         end
         close(s)
