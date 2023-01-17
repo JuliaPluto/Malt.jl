@@ -56,8 +56,8 @@ const TEST_BENCHMARK = false
         if TEST_BENCHMARK
             @test (
                 # one of these should pass:
-                ratio < 1.2 || # < 20% slower, or
-                t1 - t2 < 0.002 # < 2ms slower
+                ratio < 1.1 || # < 10% slower, or
+                t1 - t2 < 0.001 # < 1ms slower
             )
         end
     end
