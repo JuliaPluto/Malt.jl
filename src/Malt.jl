@@ -11,6 +11,8 @@ import Serialization: serialize, deserialize
 # using Logging
 using Sockets
 
+import RelocatableFolders
+
 
 """
 Malt will raise a `TerminatedWorkerException` when a `remotecall` is made to a `Worker`
@@ -52,9 +54,10 @@ mutable struct Worker
     end
 end
 
+const worker_script_path = RelocatableFolders.@path joinpath(@__DIR__, "worker.jl")
+
 function _get_worker_cmd(exe=joinpath(Sys.BINDIR, Base.julia_exename()); exeflags=[])
-    script = joinpath(@__DIR__, "worker.jl")
-    `$exe $exeflags $script`
+    `$exe $exeflags $worker_script_path`
 end
 
 _check(w::Worker) = isrunning(w) || throw(TerminatedWorkerException())
