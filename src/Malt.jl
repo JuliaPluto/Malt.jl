@@ -47,8 +47,8 @@ mutable struct Worker
         port = parse(UInt16, port_str)
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
-        w = finalizer(w -> @async(stop(w)), new(port, proc))
-        atexit(() -> stop(w))
+        w = finalizer(w -> @async(kill(w)), new(port, proc))
+        atexit(() -> kill(w))
 
         return w
     end
