@@ -60,29 +60,29 @@ function _get_worker_cmd(exe=joinpath(Sys.BINDIR, Base.julia_exename()); exeflag
     `$exe $exeflags $worker_script_path`
 end
 
-_check(w::Worker) = isrunning(w) || throw(TerminatedWorkerException())
+_assert_is_running(w::Worker) = isrunning(w) || throw(TerminatedWorkerException())
 
 
-## Use tuples instead of structs so the worker doesn't need to load additional modules.
+## Use named tuples instead of structs so the worker doesn't need to load additional modules.
 
-_new_call_msg(send_result::Bool, f::Function, args...; kwargs...) = (
+_new_call_msg(send_result::Bool, f::Function, args...; kwargs...) = (;
     header = :call,
-    f=f,
-    args=args,
-    kwargs=kwargs,
-    send_result = send_result,
+    f,
+    args,
+    kwargs,
+    send_result,
 )
 
-_new_do_msg(f::Function, args...; kwargs...) = (
+_new_do_msg(f::Function, args...; kwargs...) = (;
     header = :remote_do,
-    f=f,
-    args=args,
-    kwargs=kwargs,
+    f,
+    args,
+    kwargs,
 )
 
-_new_channel_msg(expr) = (
+_new_channel_msg(expr) = (;
     header = :channel,
-    expr = expr,
+    expr,
 )
 
 function _send_msg(port::UInt16, msg)
@@ -105,13 +105,13 @@ function _recv(socket)
 end
 
 function _send(w::Worker, msg)
-    _check(w)
+    _assert_is_running(w)
     _recv(_send_msg(w.port, msg))
 end
 
 # TODO: Unwrap TaskFailedExceptions
 function _send_async(w::Worker, msg)::Task
-    _check(w)
+    _assert_is_running(w)
     @async(_recv(_send_msg(w.port, msg)))
 end
 
@@ -147,7 +147,7 @@ Unlike `remotecall`, it discards the result of the computation,
 meaning there's no way to check if the computation was completed.
 """
 function remote_do(f, w::Worker, args...; kwargs...)
-    _check(w)
+    _assert_is_running(w)
     _send_msg(w.port, _new_do_msg(f, args..., kwargs...))
     nothing
 end
@@ -279,7 +279,7 @@ latest request (`remotecall*` or `remote_eval*`) that was sent to the worker.
 """
 function interrupt(w::Worker)
     if Sys.iswindows()
-        _check(w)
+        _assert_is_running(w)
         _send_msg(w.port, (header=:interrupt,))
     else
         Base.kill(w.proc, Base.SIGINT)
