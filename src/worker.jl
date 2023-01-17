@@ -19,6 +19,8 @@ function main()
     @debug("WORKER: new port", port)
     println(stdout, port)
     flush(stdout)
+    
+    # Set network parameters, this is copied from Distributed
     Sockets.nagle(server, false)
     Sockets.quickack(server, true)
 
@@ -33,23 +35,23 @@ function serve(server::Sockets.TCPServer)
     while isopen(server)
         try
             # Wait for new request
-            sock = accept(server)
-            @debug("New connection", sock)
+            client_connection = accept(server)
+            @debug("New connection", client_connection)
             
             # Handle request asynchronously
             # TODO: if `begin` was `while true`, then this connection could be reused. (like in Distributed)
             latest = @async begin
-                # Set network parameters
-                Sockets.nagle(sock, false)
-                Sockets.quickack(sock, true)
+                # Set network parameters, this is copied from Distributed
+                Sockets.nagle(client_connection, false)
+                Sockets.quickack(client_connection, true)
                 
-                if !eof(sock)
-                    msg = deserialize(sock)
+                if !eof(client_connection)
+                    msg = deserialize(client_connection)
                     if get(msg, :header, nothing) === :interrupt
                         interrupt(latest)
                     else
                         @debug("WORKER: Received message", msg)
-                        handle(Val(msg.header), sock, msg)
+                        handle(Val(msg.header), client_connection, msg)
                     end
                 end
             end
