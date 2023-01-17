@@ -63,7 +63,7 @@ end
 _assert_is_running(w::Worker) = isrunning(w) || throw(TerminatedWorkerException())
 
 
-## Use named tuples instead of structs so the worker doesn't need to load additional modules.
+## We use named tuples instead of structs for messaging so the worker doesn't need to load additional modules.
 
 _new_call_msg(send_result::Bool, f::Function, args...; kwargs...) = (;
     header = :call,

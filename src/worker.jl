@@ -18,6 +18,9 @@ function main()
     # Write port number to stdout to let main process know where to send requests
     @debug("WORKER: new port", port)
     println(stdout, port)
+    flush(stdout)
+    Sockets.nagle(server, false)
+    Sockets.quickack(server, true)
 
     serve(server)
 end
@@ -31,10 +34,15 @@ function serve(server::Sockets.TCPServer)
         try
             # Wait for new request
             sock = accept(server)
-            @debug(sock)
-
+            @debug("New connection", sock)
+            
             # Handle request asynchronously
+            # TODO: if `begin` was `while true`, then this connection could be reused. (like in Distributed)
             latest = @async begin
+                # Set network parameters
+                Sockets.nagle(sock, false)
+                Sockets.quickack(sock, true)
+                
                 if !eof(sock)
                     msg = deserialize(sock)
                     if get(msg, :header, nothing) === :interrupt
