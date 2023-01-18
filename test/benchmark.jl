@@ -44,7 +44,7 @@ const TEST_BENCHMARK = false
         f1()
         f2()
         
-        @test f1() ≈ f2()
+        @test f1() == f2() || f1() ≈ f2()
         
         t1 = @belapsed $f1()
         t2 = @belapsed $f2()
