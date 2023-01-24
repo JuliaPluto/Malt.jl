@@ -55,9 +55,12 @@ function serve(server::Sockets.TCPServer)
                     end
                 end
             end
-        catch InterruptException
-            @debug("WORKER: Caught interrupt!")
-            interrupt(latest)
+        catch e
+            if e isa InterruptException
+                @debug("WORKER: Caught interrupt!")
+            else
+                @error("WORKER: Caught exception!", exception=(e, backtrace()))
+            end
             continue
         end
     end
