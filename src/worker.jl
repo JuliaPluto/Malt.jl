@@ -5,7 +5,7 @@ using Sockets
 ## Allow catching InterruptExceptions
 Base.exit_on_sigint(false)
 
-ENV["JULIA_DEBUG"] = @__MODULE__
+# ENV["JULIA_DEBUG"] = @__MODULE__
 
 include("./MsgType.jl")
 
@@ -50,7 +50,8 @@ function serve(server::Sockets.TCPServer)
                 
                 if !eof(client_connection)
                     
-                    msg_type, msg_id = deserialize(client_connection)::Tuple{UInt8, MsgID}
+                    msg_type = read(client_connection, UInt8)
+                    msg_id = read(client_connection, MsgID)
                     msg_data = deserialize(client_connection)
                     
                     # TODO: msg boundary
@@ -88,17 +89,14 @@ interrupt(::Nothing) = nothing
 Low-level: send a message to the host.
 """
 function _send_msg(host_socket, msg_type::UInt8, msg_id::MsgID, msg_data)
-    
-    serialize(host_socket, (msg_type, msg_id))
+    write(host_socket, msg_type)
+    write(host_socket, msg_id)
     serialize(host_socket, msg_data)
     # TODO: send msg boundary
     # serialize(host_socket, MSG_BOUNDARY)
 
     return nothing
 end
-
-
-
 
 
 function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id::MsgID)
@@ -118,7 +116,7 @@ function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id
         socket, 
         success ? MsgType.from_worker_call_result : MsgType.from_worker_call_failure, 
         msg_id, 
-        (result,)
+        result
     )
 end
 

@@ -18,7 +18,7 @@ include("./MsgType.jl")
 
 
 
-ENV["JULIA_DEBUG"] = @__MODULE__
+# ENV["JULIA_DEBUG"] = @__MODULE__
 
 
 
@@ -66,14 +66,21 @@ mutable struct Worker
         
         # Connect
         socket = connect(port)
+        @debug "HOST: Starting receive loop" worker
         
-        receive_task = @async _receive_loop(worker)
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)), 
             new(port, proc, socket, MsgID(0), Dict{MsgID,Channel}())
         )
         atexit(() -> stop(w))
+        
+        
+        receive_task = @async try
+            _receive_loop(w)
+        catch e
+            @error "huhhh" exception=(e, catch_backtrace())
+        end
 
         return w
     end
@@ -85,14 +92,62 @@ end
 
 # TODO
 function _receive_loop(worker::Worker)
+    @debug "HOST: Starting receive loop" worker
+    
     while isopen(worker.current_socket) && !eof(worker.current_socket)
-        try
-            response = deserialize(socket)
+        local msg_type, msg_id, msg_data
+        
+        success = try
+            @debug "HOST: Waiting for message"
             
-            response.result
+            msg_type = read(worker.current_socket, UInt8)
+            msg_id = read(worker.current_socket, MsgID)
+            @debug "HOST: 1" msg_type msg_id
             
-        catch
+            
+            msg_data = deserialize(worker.current_socket)
+            @debug "HOST: 2" msg_data
+            
+            
+            # TODO: msg boundary
+            # _discard_msg_boundary = deserialize(worker.current_socket)
+            
+            true
+        catch e
+            @error "HOST: Error deserializing data" exception=(e, catch_backtrace())
+            
+            
+            # TODO: read until msg boundary
+            # _discard_msg_boundary = deserialize(worker.current_socket)
+            
+            false
         end
+        
+        if !success
+            if @isdefined(msg_id)
+                msg_data = ErrorException("failed to deserialize data from worker")
+                
+                msg_type = MsgType.from_worker_call_failure
+                
+                # TODO: what about channels?
+            else
+                @error "HOST: Error deserializing data"
+                continue
+            end
+        end
+        
+        if msg_type === MsgType.from_worker_call_result || msg_type === MsgType.from_worker_call_failure
+            c = get(worker.expected_replies, msg_id, nothing)
+            if c isa Channel{Any}
+                put!(c, msg_data)
+            else
+                @error "Received unexpected response" msg_type msg_id msg_data
+            end
+        else
+            @error "TODO NOT YET IMPLEMENTED"
+        end
+        
+        @debug("HOST: Received message", msg_data) 
     end
     @debug("HOST: receive loop ended", worker)
 end
@@ -158,12 +213,13 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
     _assert_is_running(worker)
     # _ensure_connected(worker)
     
-    msg_id = (worker.current_message_id += MsgID(1))
+    msg_id = (worker.current_message_id += MsgID(1))::MsgID
     if expect_reply
         worker.expected_replies[msg_id] = Channel{Any}(0)
     end
     
-    serialize(worker.current_socket, (msg_type, msg_id))
+    write(worker.current_socket, msg_type)
+    write(worker.current_socket, msg_id)
     serialize(worker.current_socket, msg_data)
     # TODO: send msg boundary
     # serialize(worker.current_socket, MSG_BOUNDARY)
@@ -196,10 +252,10 @@ end
 """
 `@async(_wait_for_response) ∘ _send_msg`
 """
-function _send_receive_async(w::Worker, msg_type::UInt8, msg_data)::Task
+function _send_receive_async(w::Worker, msg_type::UInt8, msg_data, output_transformation=identity)::Task
     # TODO: Unwrap TaskFailedExceptions
     msg_id = _send_msg(w, msg_type, msg_data, true)
-    return @async _wait_for_response(w, msg_id)
+    return @async output_transformation(_wait_for_response(w, msg_id))
 end
 
 
@@ -228,7 +284,7 @@ function remotecall(f, w::Worker, args...; kwargs...)
     _send_receive_async(
         w, 
         MsgType.from_host_call_with_response, 
-        _new_call_msg(true, f, args, kwargs)
+        _new_call_msg(true, f, args, kwargs),
     )
 end
 
@@ -356,7 +412,8 @@ _assert_is_running(w::Worker) = isrunning(w) || throw(TerminatedWorkerException(
 """
     Malt.stop(w::Worker)::Bool
 
-Try to terminate the worker process `w`.
+Try to terminate the worker process `w` using `Base.exit`.
+
 If `w` is still alive, and a termination message is sent, `stop` returns true.
 If `w` is already dead, `stop` returns `false`.
 """
@@ -378,6 +435,17 @@ Terminate the worker process `w` forcefully by sending a `SIGTERM` signal.
 This is not the recommended way to terminate the process. See `Malt.stop`.
 """ # https://youtu.be/dyIilW_eBjc
 kill(w::Worker) = Base.kill(w.proc)
+
+
+function _wait_for_exit(w::Worker; timeout_s::Real=20)
+    t0 = time()
+    while isrunning(w)
+        sleep(.01)
+        if time() - t0 > timeout_s
+            error("Worker did not exit after $timeout_s seconds")
+        end
+    end
+end
 
 
 """

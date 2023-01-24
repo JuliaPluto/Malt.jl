@@ -6,6 +6,8 @@ using Test
 # If they fail something is definitely wrong.
 # More tests should be added in the future.
 
+include("benchmark.jl")
+
 
 @testset "Worker management" begin
     w = m.Worker()
@@ -13,7 +15,7 @@ using Test
 
     # Terminating workers takes about 0.5s
     m.stop(w)
-    sleep(2)
+    m._wait_for_exit(w)
     @test m.isrunning(w) === false
 end
 
@@ -24,6 +26,7 @@ end
     @test @show(m.remotecall_fetch(&, w, true, true))
 
     m.stop(w)
+    m._wait_for_exit(w)
 end
 
 
@@ -42,6 +45,7 @@ end
     @test m.remote_eval_fetch(Main, w, :(Stub.x)) == str
 
     m.stop(w)
+    m._wait_for_exit(w)
 end
 
 
@@ -74,7 +78,9 @@ end
     @test m.isrunning(w) === true
 
     m.stop(w)
-    sleep(2)
+    # TODO: why do i need kill here?
+    m.kill(w)
+    m._wait_for_exit(w)
     @test m.isrunning(w) === false
 end
 
@@ -148,9 +154,9 @@ end
     @test m.isrunning(w)
 
     m.stop(w)
+    m._wait_for_exit(w)
 end
 
-include("benchmark.jl")
 
 
 

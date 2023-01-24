@@ -11,9 +11,10 @@ Connection:
 
 Communication (either direction):
 
-1. Send a tuple `(msg_type::UInt8, message_id::UInt64)`
-2. Send your message data
-3. (Not yet implemented) send the message boundary
+1. Send `msg_type::UInt8`
+2. Send `message_id::UInt64`
+3. Send your message data
+4. (Not yet implemented) send the message boundary
 
 
 
@@ -41,15 +42,15 @@ from_host_interrupt
 
 from_worker_call_result
 
-(result, )
+result
 
 from_worker_call_failure
 
-(result, )
+result
 
 from_worker_channel_value
 
-(value, )
+value
 
 
 

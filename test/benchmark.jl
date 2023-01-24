@@ -4,7 +4,7 @@ import Malt as m
 import Distributed
 
 # Set to true to fail tests if benchmark is too slow
-const TEST_BENCHMARK = false
+const TEST_BENCHMARK = true
 
 
 @testset "Benchmark" begin
