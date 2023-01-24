@@ -218,9 +218,14 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
         worker.expected_replies[msg_id] = Channel{Any}(0)
     end
     
-    write(worker.current_socket, msg_type)
-    write(worker.current_socket, msg_id)
-    serialize(worker.current_socket, msg_data)
+    
+    io = IOBuffer()
+    write(io, msg_type)
+    write(io, msg_id)
+    serialize(io, msg_data)
+    seekstart(io)
+    write(worker.current_socket, io)
+    
     # TODO: send msg boundary
     # serialize(worker.current_socket, MSG_BOUNDARY)
 

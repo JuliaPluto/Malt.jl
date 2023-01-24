@@ -90,9 +90,14 @@ interrupt(::Nothing) = nothing
 Low-level: send a message to the host.
 """
 function _send_msg(host_socket, msg_type::UInt8, msg_id::MsgID, msg_data)
-    write(host_socket, msg_type)
-    write(host_socket, msg_id)
-    serialize(host_socket, msg_data)
+    io = IOBuffer()
+    write(io, msg_type)
+    write(io, msg_id)
+    serialize(io, msg_data)
+    seekstart(io)
+    write(host_socket, io)
+    
+    # serialize(host_socket, msg_data)
     # TODO: send msg boundary
     # serialize(host_socket, MSG_BOUNDARY)
 
