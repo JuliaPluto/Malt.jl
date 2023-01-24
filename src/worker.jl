@@ -61,6 +61,7 @@ function serve(server::Sockets.TCPServer)
             else
                 @error("WORKER: Caught exception!", exception=(e, backtrace()))
             end
+            interrupt(latest)
             continue
         end
     end
