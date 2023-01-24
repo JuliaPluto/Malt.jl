@@ -29,6 +29,11 @@ const TEST_BENCHMARK = false
         quote
             sleep(.01)
         end
+        
+        
+        quote
+            zeros(UInt8, 50_000_000)
+        end
     
         quote
             1+1
@@ -40,9 +45,6 @@ const TEST_BENCHMARK = false
         
         f1() = m.remote_eval_fetch(Main, w, ex)
         f2() = Distributed.remotecall_eval(Main, p, ex)
-        
-        f1()
-        f2()
         
         @test f1() == f2() || f1() ≈ f2()
         
