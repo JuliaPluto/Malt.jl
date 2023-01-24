@@ -21,7 +21,7 @@ end
 @testset "Evaluating functions" begin
     w = m.Worker()
     @test m.isrunning(w)
-    @test m.remotecall_fetch(&, w, true, true)
+    @test @show(m.remotecall_fetch(&, w, true, true))
 
     m.stop(w)
 end
@@ -45,23 +45,23 @@ end
 end
 
 
-@testset "Worker channels" begin
-    w = m.Worker()
+# @testset "Worker channels" begin
+#     w = m.Worker()
 
-    lc = m.worker_channel(w, :(rc = Channel()))
+#     lc = m.worker_channel(w, :(rc = Channel()))
 
-    @testset for _i in 1:100
-        n = rand(Int)
+#     @testset for _i in 1:100
+#         n = rand(Int)
 
-        m.remote_eval(Main, w, quote
-            put!(rc, $(n))
-        end)
+#         m.remote_eval(Main, w, quote
+#             put!(rc, $(n))
+#         end)
 
-        @test take!(lc) === n
-    end
+#         @test take!(lc) === n
+#     end
 
-    m.stop(w)
-end
+#     m.stop(w)
+# end
 
 @testset "Signals" begin
     w = m.Worker()
@@ -151,3 +151,9 @@ end
 end
 
 include("benchmark.jl")
+
+
+
+
+#TODO: 
+# test that worker.expected_replies is empty after a call

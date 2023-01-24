@@ -5,16 +5,9 @@ using Sockets
 ## Allow catching InterruptExceptions
 Base.exit_on_sigint(false)
 
-const msg_type_from_host = (
-    from_host_call_with_response = UInt8(1),
-    from_host_call_without_response = UInt8(2),
-    from_host_channel_open = UInt8(10),
-    from_host_interrupt = UInt8(20),
-    ####
-    from_worker_call_result = UInt8(80),
-    from_worker_call_failure = UInt8(81),
-    from_worker_channel_value = UInt8(90),
-)
+ENV["JULIA_DEBUG"] = @__MODULE__
+
+include("./MsgType.jl")
 
 # ## TODO:
 # ## * Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
@@ -56,12 +49,20 @@ function serve(server::Sockets.TCPServer)
                 Sockets.quickack(client_connection, true)
                 
                 if !eof(client_connection)
-                    id, msg = deserialize(client_connection)
-                    if get(msg, :header, nothing) === :interrupt
+                    
+                    msg_type, msg_id = deserialize(client_connection)::Tuple{UInt8, MsgID}
+                    msg_data = deserialize(client_connection)
+                    
+                    # TODO: msg boundary
+                    # _discard_msg_boundary = deserialize(client_connection)
+                    
+                    if msg_type === MsgType.from_host_interrupt
                         interrupt(latest)
                     else
-                        @debug("WORKER: Received message", msg)
-                        handle(Val(msg.header), client_connection, msg, id)
+                        @debug("WORKER: Received message", msg_data)
+                        handle(Val(msg_type), client_connection, msg_data, msg_id)
+                        @debug("WORKER: handled")
+                        
                     end
                 end
             end
@@ -83,22 +84,62 @@ interrupt(::Nothing) = nothing
 
 
 
-function handle(::Val{:call}, socket, msg, id::UInt16)
-    try
-        result = msg.f(msg.args...; msg.kwargs...)
+"""
+Low-level: send a message to the host.
+"""
+function _send_msg(host_socket, msg_type::UInt8, msg_id::MsgID, msg_data)
+    
+    serialize(host_socket, (msg_type, msg_id))
+    serialize(host_socket, msg_data)
+    # TODO: send msg boundary
+    # serialize(host_socket, MSG_BOUNDARY)
+
+    return nothing
+end
+
+
+
+
+
+function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id::MsgID)
+    f, args, kwargs, respond_with_nothing = msg
+    
+    success, result = try
+        result = f(args...; kwargs...)
+        
         # @debug("WORKER: Evaluated result", result)
-        serialize(socket, (status=:ok, result=(msg.send_result ? result : nothing)))
+        (true, respond_with_nothing ? nothing : result)
     catch e
         # @debug("WORKER: Got exception!", e)
-        serialize(socket, (status=:err, result=e))
+        (false, e)
+    end
+    
+    _send_msg(
+        socket, 
+        success ? MsgType.from_worker_call_result : MsgType.from_worker_call_failure, 
+        msg_id, 
+        (result,)
+    )
+end
+
+
+function handle(::Val{MsgType.from_host_call_without_response}, socket, msg, msg_id::MsgID)
+    f, args, kwargs, _ignored = msg
+    
+    try
+        f(args...; kwargs...)
+    catch e
+        @warn("WORKER: Got exception!", e)
+        @debug("WORKER: Got exception!", e)
+        # TODO: exception is ignored, is that what we want here?
     end
 end
 
-function handle(::Val{:remote_do}, socket, msg, id::UInt16)
-    msg.f(msg.args...; msg.kwargs...)
-end
 
-# function handle(::Val{:channel}, socket, msg, id::UInt16)
+
+
+
+# function handle(::Val{:channel}, socket, msg, msg_id::MsgID)
 #     channel = eval(msg.expr)
 #     while isopen(channel) && isopen(socket)
 #         serialize(socket, take!(channel))

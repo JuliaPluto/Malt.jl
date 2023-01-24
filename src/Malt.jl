@@ -14,11 +14,23 @@ using Sockets
 import RelocatableFolders
 
 
+include("./MsgType.jl")
+
+
+
+ENV["JULIA_DEBUG"] = @__MODULE__
+
+
+
+
 """
 Malt will raise a `TerminatedWorkerException` when a `remotecall` is made to a `Worker`
 that has already been terminated.
 """
 struct TerminatedWorkerException <: Exception end
+
+
+
 
 
 """
@@ -40,8 +52,8 @@ mutable struct Worker
     current_socket::TCPSocket
     # socket_lock::ReentrantLock
     
-    current_message_id::UInt16
-    expected_replies::Dict{UInt16,Channel}
+    current_message_id::MsgID
+    expected_replies::Dict{MsgID,Channel}
     
     function Worker(;exeflags=[])
         # Spawn process
@@ -54,45 +66,73 @@ mutable struct Worker
         
         # Connect
         socket = connect(port)
+        
+        receive_task = @async _receive_loop(worker)
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
-        w = finalizer(w -> @async(stop(w)), new(port, proc, socket, UInt16(0), Dict{UInt16,Channel}()))
+        w = finalizer(w -> @async(stop(w)), 
+            new(port, proc, socket, MsgID(0), Dict{MsgID,Channel}())
+        )
         atexit(() -> stop(w))
 
         return w
     end
 end
 
-const worker_script_path = RelocatableFolders.@path joinpath(@__DIR__, "worker.jl")
 
-function _get_worker_cmd(exe=Base.julia_cmd(); exeflags=[])
-    `$exe $exeflags $worker_script_path`
+
+
+
+# TODO
+function _receive_loop(worker::Worker)
+    while isopen(worker.current_socket) && !eof(worker.current_socket)
+        try
+            response = deserialize(socket)
+            
+            response.result
+            
+        catch
+        end
+    end
+    @debug("HOST: receive loop ended", worker)
 end
 
-_assert_is_running(w::Worker) = isrunning(w) || throw(TerminatedWorkerException())
 
 
-## We use named tuples instead of structs for messaging so the worker doesn't need to load additional modules.
+# The entire `src` dir should be relocatable, so that worker.jl can include("MsgType.jl").
+const src_path = RelocatableFolders.@path @__DIR__
 
-_new_call_msg(send_result::Bool, f::Function, args...; kwargs...) = (;
-    header = :call,
+function _get_worker_cmd(exe=Base.julia_cmd(); exeflags=[])
+    `$exe $exeflags $(joinpath(src_path, "worker.jl"))`
+end
+
+
+
+
+
+
+## We use tuples instead of structs for messaging so the worker doesn't need to load additional modules.
+
+_new_call_msg(send_result::Bool, f::Function, args, kwargs) = (
     f,
     args,
     kwargs,
-    send_result,
+    !send_result,
 )
 
-_new_do_msg(f::Function, args...; kwargs...) = (;
-    header = :remote_do,
+_new_do_msg(f::Function, args, kwargs) = (
     f,
     args,
     kwargs,
+    true,
 )
 
-_new_channel_msg(expr) = (;
-    header = :channel,
+_new_channel_msg(expr) = (
     expr,
 )
+
+
+
 
 # function _ensure_connected(w::Worker)
 #     # TODO: check if process running?
@@ -104,44 +144,66 @@ _new_channel_msg(expr) = (;
 #     return w
 # end
 
-function _send_msg(worker::Worker, msg)::UInt16
+
+
+
+
+# GENERIC COMMUNICATION PROTOCOL
+
+"""
+Low-level: send a message to a worker. Returns a `msg_id::UInt16`, which can be used to wait for a response with `_wait_for_response`.
+"""
+function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool=true)::MsgID
+    
+    _assert_is_running(worker)
     # _ensure_connected(worker)
-    id = (worker.current_message_id += UInt16(1))
-    worker.expected_replies[id] = Channel{Any}(0)
-    serialize(worker.current_socket, (id, msg))
-    return id
+    
+    msg_id = (worker.current_message_id += MsgID(1))
+    if expect_reply
+        worker.expected_replies[msg_id] = Channel{Any}(0)
+    end
+    
+    serialize(worker.current_socket, (msg_type, msg_id))
+    serialize(worker.current_socket, msg_data)
+    # TODO: send msg boundary
+    # serialize(worker.current_socket, MSG_BOUNDARY)
+
+    return msg_id
 end
 
-function _receive_loop(worker::Worker)
-    while isopen(socket) && !eof(socket)
-        try
-            response = deserialize(socket)
-            
-            response.result
-            
-        catch
-        end
+"""
+Low-level: wait for a response to a previously sent message. Returns the response. Blocking call.
+"""
+function _wait_for_response(worker::Worker, msg_id::MsgID)
+    c = get(worker.expected_replies, msg_id, nothing)
+    if c isa Channel{Any}
+        response = take!(c)
+        delete!(worker.expected_replies, msg_id)
+        return response
+    else
+        error("No response expected for message id $msg_id")
     end
 end
 
-function _recv(socket)
-    
+"""
+`_wait_for_response ∘ _send_msg`
+"""
+function _send_receive(w::Worker, msg_type::UInt8, msg_data)
+    msg_id = _send_msg(w, msg_type, msg_data, true)
+    return _wait_for_response(w, msg_id)
 end
 
-function _send_receive(w::Worker, msg)
-    _assert_is_running(w)
-    # _ensure_connected(worker)
-    
-    id = _send_msg(w, msg)
-    
-    _recv()
+"""
+`@async(_wait_for_response) ∘ _send_msg`
+"""
+function _send_receive_async(w::Worker, msg_type::UInt8, msg_data)::Task
+    # TODO: Unwrap TaskFailedExceptions
+    msg_id = _send_msg(w, msg_type, msg_data, true)
+    return @async _wait_for_response(w, msg_id)
 end
 
-# TODO: Unwrap TaskFailedExceptions
-function _send_async(w::Worker, msg)::Task
-    _assert_is_running(w)
-    @async(_recv(_send_msg(w.port, msg)))
-end
+
+
 
 
 """
@@ -163,8 +225,40 @@ julia> fetch(promise)
 ```
 """
 function remotecall(f, w::Worker, args...; kwargs...)
-    _send_async(w, _new_call_msg(true, f, args..., kwargs...))
+    _send_receive_async(
+        w, 
+        MsgType.from_host_call_with_response, 
+        _new_call_msg(true, f, args, kwargs)
+    )
 end
+
+"""
+    Malt.remotecall_fetch(f, w::Worker, args...; kwargs...)
+
+Shorthand for `fetch(Malt.remotecall(…))`. Blocks and then returns the result of the remote call.
+"""
+function remotecall_fetch(f, w::Worker, args...; kwargs...)
+    _send_receive(
+        w, 
+        MsgType.from_host_call_with_response, 
+        _new_call_msg(true, f, args, kwargs)
+    )
+end
+
+
+"""
+    Malt.remotecall_wait(f, w::Worker, args...; kwargs...)
+
+Shorthand for `wait(Malt.remotecall(…))`. Blocks and discards the resulting value.
+"""
+function remotecall_wait(f, w::Worker, args...; kwargs...)
+    _send_receive(
+        w, 
+        MsgType.from_host_call_with_response, 
+        _new_call_msg(false, f, args, kwargs)
+    )
+end
+
 
 
 """
@@ -175,30 +269,15 @@ Unlike `remotecall`, it discards the result of the computation,
 meaning there's no way to check if the computation was completed.
 """
 function remote_do(f, w::Worker, args...; kwargs...)
-    _assert_is_running(w)
-    _send_msg(w.port, _new_do_msg(f, args..., kwargs...))
+    _send_msg(
+        w,
+        MsgType.from_host_call_without_response,
+        _new_do_msg(f, args, kwargs),
+        false
+    )
     nothing
 end
 
-
-"""
-    Malt.remotecall_fetch(f, w::Worker, args...; kwargs...)
-
-Shorthand for `fetch(Malt.remotecall(…))`. Blocks and then returns the result of the remote call.
-"""
-function remotecall_fetch(f, w::Worker, args...; kwargs...)
-    _send(w, _new_call_msg(true, f, args..., kwargs...))
-end
-
-
-"""
-    Malt.remotecall_wait(f, w::Worker, args...; kwargs...)
-
-Shorthand for `wait(Malt.remotecall(…))`. Blocks and discards the resulting value.
-"""
-function remotecall_wait(f, w::Worker, args...; kwargs...)
-    _send(w, _new_call_msg(false, f, args..., kwargs...))
-end
 
 
 ## Eval variants
@@ -271,6 +350,8 @@ Check whether the worker process `w` is running.
 """
 isrunning(w::Worker)::Bool = Base.process_running(w.proc)
 
+_assert_is_running(w::Worker) = isrunning(w) || throw(TerminatedWorkerException())
+
 
 """
     Malt.stop(w::Worker)::Bool
@@ -308,7 +389,7 @@ latest request (`remotecall*` or `remote_eval*`) that was sent to the worker.
 function interrupt(w::Worker)
     if Sys.iswindows()
         _assert_is_running(w)
-        _send_msg(w.port, (header=:interrupt,))
+        _send_msg(w, MsgType.from_host_interrupt, (), false)
     else
         Base.kill(w.proc, Base.SIGINT)
     end
