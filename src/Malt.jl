@@ -5,13 +5,11 @@ these functions are not stable.
 """
 module Malt
 
-import Base: Process, Channel
-import Serialization: serialize, deserialize
+# using Logging: Logging, @debug
+using Serialization: serialize, deserialize
+using Sockets: Sockets
 
-# using Logging
-using Sockets
-
-import RelocatableFolders
+using RelocatableFolders: RelocatableFolders
 
 
 """
@@ -35,7 +33,7 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 """
 mutable struct Worker
     port::UInt16
-    proc::Process
+    proc::Base.Process
 
     function Worker(;exeflags=[])
         # Spawn process
@@ -54,7 +52,7 @@ mutable struct Worker
     end
 end
 
-const worker_script_path = RelocatableFolders.@path joinpath(@__DIR__, "worker.jl")
+const worker_script_path = RelocatableFolders.@path(joinpath(@__DIR__, "worker.jl"))
 
 function _get_worker_cmd(exe=Base.julia_cmd(); exeflags=[])
     `$exe $exeflags $worker_script_path`
@@ -86,7 +84,7 @@ _new_channel_msg(expr) = (;
 )
 
 function _send_msg(port::UInt16, msg)
-    socket = connect(port)
+    socket = Sockets.connect(port)
     serialize(socket, msg)
     return socket
 end
@@ -220,7 +218,7 @@ so the worker has a handle that can be used to send messages back to the manager
 """
 function worker_channel(w::Worker, expr)::Channel
     # Send message
-    s = connect(w.port)
+    s = Sockets.connect(w.port)
     serialize(s, _new_channel_msg(expr))
 
     # Return channel

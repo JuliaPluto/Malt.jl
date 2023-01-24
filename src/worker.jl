@@ -1,25 +1,25 @@
-using Logging
-using Serialization
-using Sockets
+using Logging: Logging, @debug
+using Serialization: serialize, deserialize
+using Sockets: Sockets
 
 ## Allow catching InterruptExceptions
 Base.exit_on_sigint(false)
 
-# ## TODO:
-# ## * Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
-# ## * Define a worker specific LogLevel
-# global_logger(ConsoleLogger(stderr, Logging.Debug))
+## TODO:
+## * Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
+## * Define a worker specific LogLevel
+# Logging.global_logger(Logging.ConsoleLogger(stderr, Logging.Debug))
 
 function main()
     # Use the same port hint as Distributed
-    port_hint = 9000 + (getpid() % 1000)
-    port, server = listenany(port_hint)
+    port_hint = 9000 + (Sockets.getpid() % 1000)
+    port, server = Sockets.listenany(port_hint)
 
     # Write port number to stdout to let main process know where to send requests
     @debug("WORKER: new port", port)
     println(stdout, port)
     flush(stdout)
-    
+
     # Set network parameters, this is copied from Distributed
     Sockets.nagle(server, false)
     Sockets.quickack(server, true)
@@ -35,16 +35,16 @@ function serve(server::Sockets.TCPServer)
     while isopen(server)
         try
             # Wait for new request
-            client_connection = accept(server)
+            client_connection = Sockets.accept(server)
             @debug("New connection", client_connection)
-            
+
             # Handle request asynchronously
             # TODO: if `begin` was `while true`, then this connection could be reused. (like in Distributed)
             latest = @async begin
                 # Set network parameters, this is copied from Distributed
                 Sockets.nagle(client_connection, false)
                 Sockets.quickack(client_connection, true)
-                
+
                 if !eof(client_connection)
                     msg = deserialize(client_connection)
                     if get(msg, :header, nothing) === :interrupt
