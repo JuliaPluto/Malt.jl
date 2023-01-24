@@ -149,3 +149,5 @@ end
 
     m.stop(w)
 end
+
+include("benchmark.jl")
