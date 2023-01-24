@@ -65,7 +65,7 @@ function serve(server::Sockets.TCPServer)
 end
 
 # Check if task is still running before throwing interrupt
-interrupt(t::Task) = istaskdone(t) || Base.throwto(t, InterruptException)
+interrupt(t::Task) = istaskdone(t) || Base.schedule(t, InterruptException(); error=true)
 interrupt(::Nothing) = nothing
 
 function handle(::Val{:call}, socket, msg)
