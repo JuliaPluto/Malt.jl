@@ -5,6 +5,17 @@ using Sockets
 ## Allow catching InterruptExceptions
 Base.exit_on_sigint(false)
 
+const msg_type_from_host = (
+    from_host_call_with_response = UInt8(1),
+    from_host_call_without_response = UInt8(2),
+    from_host_channel_open = UInt8(10),
+    from_host_interrupt = UInt8(20),
+    ####
+    from_worker_call_result = UInt8(80),
+    from_worker_call_failure = UInt8(81),
+    from_worker_channel_value = UInt8(90),
+)
+
 # ## TODO:
 # ## * Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
 # ## * Define a worker specific LogLevel
@@ -39,19 +50,18 @@ function serve(server::Sockets.TCPServer)
             @debug("New connection", client_connection)
             
             # Handle request asynchronously
-            # TODO: if `begin` was `while true`, then this connection could be reused. (like in Distributed)
-            latest = @async begin
+            latest = @async while true
                 # Set network parameters, this is copied from Distributed
                 Sockets.nagle(client_connection, false)
                 Sockets.quickack(client_connection, true)
                 
                 if !eof(client_connection)
-                    msg = deserialize(client_connection)
+                    id, msg = deserialize(client_connection)
                     if get(msg, :header, nothing) === :interrupt
                         interrupt(latest)
                     else
                         @debug("WORKER: Received message", msg)
-                        handle(Val(msg.header), client_connection, msg)
+                        handle(Val(msg.header), client_connection, msg, id)
                     end
                 end
             end
@@ -68,7 +78,9 @@ end
 interrupt(t::Task) = istaskdone(t) || Base.throwto(t, InterruptException)
 interrupt(::Nothing) = nothing
 
-function handle(::Val{:call}, socket, msg)
+
+
+function handle(::Val{:call}, socket, msg, id::UInt16)
     try
         result = msg.f(msg.args...; msg.kwargs...)
         # @debug("WORKER: Evaluated result", result)
@@ -76,28 +88,22 @@ function handle(::Val{:call}, socket, msg)
     catch e
         # @debug("WORKER: Got exception!", e)
         serialize(socket, (status=:err, result=e))
-    finally
-        close(socket)
     end
 end
 
-function handle(::Val{:remote_do}, socket, msg)
-    try
-        msg.f(msg.args...; msg.kwargs...)
-    finally
-        close(socket)
-    end
+function handle(::Val{:remote_do}, socket, msg, id::UInt16)
+    msg.f(msg.args...; msg.kwargs...)
 end
 
-function handle(::Val{:channel}, socket, msg)
-    channel = eval(msg.expr)
-    while isopen(channel) && isopen(socket)
-        serialize(socket, take!(channel))
-    end
-    isopen(socket) && close(socket)
-    isopen(channel) && close(channel)
-    return
-end
+# function handle(::Val{:channel}, socket, msg, id::UInt16)
+#     channel = eval(msg.expr)
+#     while isopen(channel) && isopen(socket)
+#         serialize(socket, take!(channel))
+#     end
+#     isopen(socket) && close(socket)
+#     isopen(channel) && close(channel)
+#     return
+# end
 
 if abspath(PROGRAM_FILE) == @__FILE__
     main()

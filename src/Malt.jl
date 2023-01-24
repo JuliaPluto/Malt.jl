@@ -36,7 +36,13 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 mutable struct Worker
     port::UInt16
     proc::Process
-
+    
+    current_socket::TCPSocket
+    # socket_lock::ReentrantLock
+    
+    current_message_id::UInt16
+    expected_replies::Dict{UInt16,Channel}
+    
     function Worker(;exeflags=[])
         # Spawn process
         cmd = _get_worker_cmd(;exeflags)
@@ -45,9 +51,12 @@ mutable struct Worker
         # Block until reading the port number of the process (from its stdout)
         port_str = readline(proc)
         port = parse(UInt16, port_str)
+        
+        # Connect
+        socket = connect(port)
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
-        w = finalizer(w -> @async(stop(w)), new(port, proc))
+        w = finalizer(w -> @async(stop(w)), new(port, proc, socket, UInt16(0), Dict{UInt16,Channel}()))
         atexit(() -> stop(w))
 
         return w
@@ -85,28 +94,47 @@ _new_channel_msg(expr) = (;
     expr,
 )
 
-function _send_msg(port::UInt16, msg)
-    socket = connect(port)
-    serialize(socket, msg)
-    return socket
+# function _ensure_connected(w::Worker)
+#     # TODO: check if process running?
+#     # TODO: `while` instead of `if`?
+#     if w.current_socket === nothing || !isopen(w.current_socket)
+#         w.current_socket = connect(w.port)
+#         @async _receive_loop(w)
+#     end
+#     return w
+# end
+
+function _send_msg(worker::Worker, msg)::UInt16
+    # _ensure_connected(worker)
+    id = (worker.current_message_id += UInt16(1))
+    worker.expected_replies[id] = Channel{Any}(0)
+    serialize(worker.current_socket, (id, msg))
+    return id
 end
 
-function _recv(socket)
-    try
-        if !eof(socket)
+function _receive_loop(worker::Worker)
+    while isopen(socket) && !eof(socket)
+        try
             response = deserialize(socket)
+            
             response.result
+            
+        catch
         end
-    catch e
-        rethrow(e)
-    finally
-        close(socket)
     end
 end
 
-function _send(w::Worker, msg)
+function _recv(socket)
+    
+end
+
+function _send_receive(w::Worker, msg)
     _assert_is_running(w)
-    _recv(_send_msg(w.port, msg))
+    # _ensure_connected(worker)
+    
+    id = _send_msg(w, msg)
+    
+    _recv()
 end
 
 # TODO: Unwrap TaskFailedExceptions
