@@ -35,9 +35,9 @@ mutable struct Worker
     port::UInt16
     proc::Base.Process
 
-    function Worker(;exeflags=[])
+    function Worker(;env=String[], exeflags=[])
         # Spawn process
-        cmd = _get_worker_cmd(;exeflags)
+        cmd = _get_worker_cmd(;env, exeflags)
         proc = open(cmd, "w+")
 
         # Block until reading the port number of the process (from its stdout)
@@ -54,8 +54,8 @@ end
 
 const worker_script_path = RelocatableFolders.@path(joinpath(@__DIR__, "worker.jl"))
 
-function _get_worker_cmd(exe=Base.julia_cmd(); exeflags=[])
-    `$exe $exeflags $worker_script_path`
+function _get_worker_cmd(exe=Base.julia_cmd(); env, exeflags)
+    return addenv(`$exe $exeflags $worker_script_path`, Base.byteenv(env))
 end
 
 _assert_is_running(w::Worker) = isrunning(w) || throw(TerminatedWorkerException())
