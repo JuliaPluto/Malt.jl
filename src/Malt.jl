@@ -54,7 +54,7 @@ end
 
 const worker_script_path = RelocatableFolders.@path(joinpath(@__DIR__, "worker.jl"))
 
-function _get_worker_cmd(exe=Base.julia_cmd(); env, exeflags)
+function _get_worker_cmd(exe=Base.julia_cmd()[1]; env, exeflags)
     return addenv(`$exe $exeflags $worker_script_path`, Base.byteenv(env))
 end
 
