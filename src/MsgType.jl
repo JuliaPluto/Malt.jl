@@ -11,3 +11,9 @@ const MsgType = (
 )
 
 const MsgID = UInt64
+
+# Boundary inserted between messages on the wire, used for recovering
+# from deserialization errors. Picked arbitrarily.
+# A size of 10 bytes indicates ~ ~1e24 possible boundaries, so chance of collision
+# with message contents is negligible.
+const MSG_BOUNDARY = UInt8[0x79, 0x8e, 0x8e, 0xf5, 0x6e, 0x9b, 0x2e, 0x97, 0xd5, 0x7d]

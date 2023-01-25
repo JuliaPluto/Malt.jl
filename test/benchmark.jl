@@ -46,7 +46,7 @@ const TEST_BENCHMARK = true
         f1() = m.remote_eval_fetch(Main, w, ex)
         f2() = Distributed.remotecall_eval(Main, p, ex)
         
-        @test f1() == f2() || f1() ≈ f2()
+        @test f1() == f2()
         
         t1 = @belapsed $f1()
         t2 = @belapsed $f2()

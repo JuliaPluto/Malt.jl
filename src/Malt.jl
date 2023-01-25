@@ -50,6 +50,7 @@ mutable struct Worker
     proc::Process
     
     current_socket::TCPSocket
+    write_end::IO
     # socket_lock::ReentrantLock
     
     current_message_id::MsgID
@@ -71,7 +72,7 @@ mutable struct Worker
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)), 
-            new(port, proc, socket, MsgID(0), Dict{MsgID,Channel}())
+            new(port, proc, socket, Base.buffer_writes(socket), MsgID(0), Dict{MsgID,Channel}())
         )
         atexit(() -> stop(w))
         
@@ -87,6 +88,10 @@ mutable struct Worker
 end
 
 
+
+function discard_until_boundary(io::IO)
+    readuntil(io, MSG_BOUNDARY)
+end
 
 
 
@@ -104,10 +109,8 @@ function _receive_loop(worker::Worker)
             msg_id = read(worker.current_socket, MsgID)
             @debug "HOST: 1" msg_type msg_id
             
-            
             msg_data = deserialize(worker.current_socket)
             @debug "HOST: 2" msg_data
-            
             
             # TODO: msg boundary
             # _discard_msg_boundary = deserialize(worker.current_socket)
@@ -121,6 +124,8 @@ function _receive_loop(worker::Worker)
             # _discard_msg_boundary = deserialize(worker.current_socket)
             
             false
+        finally
+            discard_until_boundary(worker.current_socket)
         end
         
         if !success
@@ -219,12 +224,20 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
     end
     
     
-    io = IOBuffer()
-    write(io, msg_type)
-    write(io, msg_id)
-    serialize(io, msg_data)
-    seekstart(io)
-    write(worker.current_socket, io)
+    io = worker.write_end
+    lock(io)
+    try
+        write(io, msg_type)
+        write(io, msg_id)
+        serialize(io, msg_data)
+        write(io, MSG_BOUNDARY)
+        flush(io)
+    finally
+        unlock(io)
+    end
+
+    # seekstart(io)
+    # write(worker.current_socket, io)
     
     # TODO: send msg boundary
     # serialize(worker.current_socket, MSG_BOUNDARY)

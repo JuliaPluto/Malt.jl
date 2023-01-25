@@ -41,19 +41,29 @@ function serve(server::Sockets.TCPServer)
             # Wait for new request
             client_connection = accept(server)
             @debug("New connection", client_connection)
-            
-            # Handle request asynchronously
+
             latest = @async while true
                 # Set network parameters, this is copied from Distributed
                 Sockets.nagle(client_connection, false)
                 Sockets.quickack(client_connection, true)
-                
+                client_writer = Base.buffer_writes(client_connection)
+
                 if !eof(client_connection)
                     
                     msg_type = read(client_connection, UInt8)
                     msg_id = read(client_connection, MsgID)
-                    msg_data = deserialize(client_connection)
-                    
+                    msg_data, success = try
+                        deserialize(client_connection), true
+                    catch err
+                        err, false
+                    finally
+                        discard_until_boundary(client_connection)
+                    end
+
+                    if !success
+                        continue
+                    end
+
                     # TODO: msg boundary
                     # _discard_msg_boundary = deserialize(client_connection)
                     
@@ -61,7 +71,7 @@ function serve(server::Sockets.TCPServer)
                         interrupt(latest)
                     else
                         @debug("WORKER: Received message", msg_data)
-                        handle(Val(msg_type), client_connection, msg_data, msg_id)
+                        handle(Val(msg_type), client_writer, msg_data, msg_id)
                         @debug("WORKER: handled")
                         
                     end
@@ -85,18 +95,29 @@ interrupt(t::Task) = istaskdone(t) || Base.schedule(t, InterruptException(); err
 interrupt(::Nothing) = nothing
 
 
+function discard_until_boundary(io::IO)
+    readuntil(io, MSG_BOUNDARY)
+end
+
 
 """
 Low-level: send a message to the host.
 """
 function _send_msg(host_socket, msg_type::UInt8, msg_id::MsgID, msg_data)
-    io = IOBuffer()
-    write(io, msg_type)
-    write(io, msg_id)
-    serialize(io, msg_data)
-    seekstart(io)
-    write(host_socket, io)
-    
+    # io = IOBuffer()
+    io = host_socket
+    lock(io)
+
+    try
+        write(io, msg_type)
+        write(io, msg_id)
+        serialize(io, msg_data)
+        write(io, MSG_BOUNDARY)
+        flush(io)
+    finally
+        unlock(io)
+    end
+
     # serialize(host_socket, msg_data)
     # TODO: send msg boundary
     # serialize(host_socket, MSG_BOUNDARY)
