@@ -6,7 +6,8 @@ using Test
 # If they fail something is definitely wrong.
 # More tests should be added in the future.
 
-include("benchmark.jl")
+include("BufferedIO.jl")
+
 
 
 @testset "Worker management" begin
@@ -156,6 +157,9 @@ end
     m.stop(w)
     m._wait_for_exit(w)
 end
+
+
+include("benchmark.jl")
 
 
 

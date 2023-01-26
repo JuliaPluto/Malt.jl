@@ -30,9 +30,12 @@ const TEST_BENCHMARK = true
             sleep(.01)
         end
         
-        
         quote
             zeros(UInt8, 50_000_000)
+        end
+        
+        quote
+            Dict(Symbol("x", i) => (x=i,) for i in 1:1000)
         end
     
         quote
@@ -48,19 +51,16 @@ const TEST_BENCHMARK = true
         
         @test f1() == f2() || f1() ≈ f2()
         
-        t1 = @belapsed $f1()
-        t2 = @belapsed $f2()
+        
+        t1 = @belapsed $f1() seconds=1
+        t2 = @belapsed $f2() seconds=1
         
         ratio = t1 / t2
         
         @info "Expr $i" ratio t1 t2 
         
         if TEST_BENCHMARK
-            @test (
-                # one of these should pass:
-                ratio < 1.1 || # < 10% slower, or
-                t1 - t2 < 0.001 # < 1ms slower
-            )
+            @test ratio < 1.15
         end
     end
     
