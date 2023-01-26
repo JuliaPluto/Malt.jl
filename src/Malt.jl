@@ -28,7 +28,12 @@ that has already been terminated.
 struct TerminatedWorkerException <: Exception end
 
 
+struct WorkerResult
+    should_throw::Bool
+    value::Any
+end
 
+unwrap_worker_result(result::WorkerResult) = result.should_throw ? throw(result.value) : result.value
 
 
 """
@@ -51,7 +56,7 @@ mutable struct Worker
     # socket_lock::ReentrantLock
     
     current_message_id::MsgID
-    expected_replies::Dict{MsgID,Channel}
+    expected_replies::Dict{MsgID,Channel{WorkerResult}}
     
     function Worker(;exeflags=[])
         # Spawn process
@@ -69,7 +74,7 @@ mutable struct Worker
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)), 
-            new(port, proc, socket, MsgID(0), Dict{MsgID,Channel}())
+            new(port, proc, socket, MsgID(0), Dict{MsgID,Channel{WorkerResult}}())
         )
         atexit(() -> stop(w))
         
@@ -124,7 +129,7 @@ function _receive_loop(worker::Worker)
             
             true
         catch e
-            @warn "HOST: Error deserializing data" exception=(e, catch_backtrace())
+            # @warn "HOST: Error deserializing data" exception=(e, catch_backtrace())
             
             
             # TODO: read until msg boundary
@@ -137,7 +142,7 @@ function _receive_loop(worker::Worker)
             if @isdefined(msg_id)
                 msg_data = ErrorException("failed to deserialize data from worker")
                 
-                msg_type = MsgType.from_worker_call_failure
+                msg_type = MsgType.special_serialization_failure
                 
                 # TODO: what about channels?
             else
@@ -146,10 +151,13 @@ function _receive_loop(worker::Worker)
             end
         end
         
-        if msg_type === MsgType.from_worker_call_result || msg_type === MsgType.from_worker_call_failure
+        if msg_type === MsgType.from_worker_call_result || msg_type === MsgType.from_worker_call_failure || msg_type === MsgType.special_serialization_failure
             c = get(worker.expected_replies, msg_id, nothing)
-            if c isa Channel{Any}
-                put!(c, msg_data)
+            if c isa Channel{WorkerResult}
+                put!(c, WorkerResult(
+                    msg_type == MsgType.special_serialization_failure,
+                    msg_data
+                ))
             else
                 @error "Received unexpected response" msg_type msg_id msg_data
             end
@@ -225,7 +233,7 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
     
     msg_id = (worker.current_message_id += MsgID(1))::MsgID
     if expect_reply
-        worker.expected_replies[msg_id] = Channel{Any}(0)
+        worker.expected_replies[msg_id] = Channel{WorkerResult}(0)
     end
     
     
@@ -263,10 +271,10 @@ Low-level: wait for a response to a previously sent message. Returns the respons
 """
 function _wait_for_response(worker::Worker, msg_id::MsgID)
     c = get(worker.expected_replies, msg_id, nothing)
-    if c isa Channel{Any}
+    if c isa Channel{WorkerResult}
         response = take!(c)
         delete!(worker.expected_replies, msg_id)
-        return response
+        return unwrap_worker_result(response)
     else
         error("No response expected for message id $msg_id")
     end
