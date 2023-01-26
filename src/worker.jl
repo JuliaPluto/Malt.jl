@@ -2,6 +2,13 @@ using Logging: Logging, @debug
 using Serialization: serialize, deserialize
 using Sockets: Sockets
 
+@enum Header begin
+    hcall
+    hchannel
+    hinterrupt
+    hremote_do
+end
+
 ## Allow catching InterruptExceptions
 Base.exit_on_sigint(false)
 
@@ -47,11 +54,11 @@ function serve(server::Sockets.TCPServer)
 
                 if !eof(client_connection)
                     msg = deserialize(client_connection)
-                    if get(msg, :header, nothing) === :interrupt
+                    if get(msg, 1, nothing) === hinterrupt
                         interrupt(latest)
                     else
                         @debug("WORKER: Received message", msg)
-                        handle(Val(msg.header), client_connection, msg)
+                        handle(Val(msg[1]), client_connection, msg)
                     end
                 end
             end
@@ -72,20 +79,20 @@ end
 interrupt(t::Task) = istaskdone(t) || Base.schedule(t, InterruptException(); error=true)
 interrupt(::Nothing) = nothing
 
-function handle(::Val{:call}, socket, msg)
+function handle(::Val{UInt8(hcall)}, socket, msg)
     try
         result = msg.f(msg.args...; msg.kwargs...)
         # @debug("WORKER: Evaluated result", result)
-        serialize(socket, (status=:ok, result=(msg.send_result ? result : nothing)))
+        serialize(socket, (true, msg.send_result ? result : nothing))
     catch e
         # @debug("WORKER: Got exception!", e)
-        serialize(socket, (status=:err, result=e))
+        serialize(socket, (false, e))
     finally
         close(socket)
     end
 end
 
-function handle(::Val{:remote_do}, socket, msg)
+function handle(::Val{UInt8(hremote_do)}, socket, msg)
     try
         msg.f(msg.args...; msg.kwargs...)
     finally
@@ -93,7 +100,7 @@ function handle(::Val{:remote_do}, socket, msg)
     end
 end
 
-function handle(::Val{:channel}, socket, msg)
+function handle(::Val{UInt8(hchannel)}, socket, msg)
     channel = eval(msg.expr)
     while isopen(channel) && isopen(socket)
         serialize(socket, take!(channel))

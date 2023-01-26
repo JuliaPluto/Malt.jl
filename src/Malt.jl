@@ -61,25 +61,36 @@ end
 _assert_is_running(w::Worker) = isrunning(w) || throw(TerminatedWorkerException())
 
 
-## We use named tuples instead of structs for messaging so the worker doesn't need to load additional modules.
+## Message "types"
 
-_new_call_msg(send_result::Bool, f::Function, args...; kwargs...) = (;
-    header = :call,
+"Every message has a `Header` indicating the action a worker should perform with the message."
+@enum Header begin
+    hcall
+    hchannel
+    hinterrupt
+    hremote_do
+end
+
+# We use tuples instead of structs for messaging so the worker doesn't need to load additional modules.
+
+_new_call_msg(send_result::Bool, f::Function, args...; kwargs...) = (
+    header = UInt8(hcall),
     f,
     args,
     kwargs,
+    # TODO: send_result should be part of the header
     send_result,
 )
 
-_new_do_msg(f::Function, args...; kwargs...) = (;
-    header = :remote_do,
+_new_do_msg(f::Function, args...; kwargs...) = (
+    header = UInt8(hremote_do),
     f,
     args,
     kwargs,
 )
 
-_new_channel_msg(expr) = (;
-    header = :channel,
+_new_channel_msg(expr) = (
+    header = UInt8(hchannel),
     expr,
 )
 
@@ -93,7 +104,8 @@ function _recv(socket)
     try
         if !eof(socket)
             response = deserialize(socket)
-            response.result
+            return response[2]
+            # TODO Handle remote exceptions
         end
     catch e
         rethrow(e)
@@ -278,7 +290,7 @@ latest request (`remotecall*` or `remote_eval*`) that was sent to the worker.
 function interrupt(w::Worker)
     if Sys.iswindows()
         _assert_is_running(w)
-        _send_msg(w.port, (header=:interrupt,))
+        _send_msg(w.port, (UInt8(hinterrupt),))
     else
         Base.kill(w.proc, Base.SIGINT)
     end
