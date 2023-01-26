@@ -6,7 +6,6 @@ using Test
 # If they fail something is definitely wrong.
 # More tests should be added in the future.
 
-include("BufferedIO.jl")
 
 
 
@@ -24,7 +23,7 @@ end
 @testset "Evaluating functions" begin
     w = m.Worker()
     @test m.isrunning(w)
-    @test @show(m.remotecall_fetch(&, w, true, true))
+    @test m.remotecall_fetch(&, w, true, true)
 
     m.stop(w)
     m._wait_for_exit(w)
@@ -96,6 +95,7 @@ end
         end),
         DomainError,
     )
+    @test m.remotecall_fetch(&, w, true, true)
 
     @test isa(
         m.remote_eval_fetch(Main, w, quote
@@ -103,6 +103,7 @@ end
         end),
         ErrorException,
     )
+    @test m.remotecall_fetch(&, w, true, true)
 
 
     ## Serializing values of unknown types will cause an exception.
@@ -119,6 +120,7 @@ end
             $stub_type_name()
         end),
     )
+    @test m.remotecall_fetch(&, w, true, true)
 
 
     ## Throwing unknown exceptions will definitely cause an exception.
@@ -135,6 +137,7 @@ end
             throw($stub_type_name2())
         end),
     )
+    @test m.remotecall_fetch(&, w, true, true)
 
 
     ## Catching unknown exceptions and returning them as values also causes an exception.
@@ -149,6 +152,7 @@ end
             end
         end),
     )
+    @test m.remotecall_fetch(&, w, true, true)
 
 
     # The worker should be able to handle all that throwing
@@ -158,6 +162,7 @@ end
     m._wait_for_exit(w)
 end
 
+include("BufferedIO.jl")
 
 include("benchmark.jl")
 

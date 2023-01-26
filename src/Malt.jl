@@ -77,7 +77,19 @@ mutable struct Worker
         receive_task = @async try
             _receive_loop(w)
         catch e
-            @error "huhhh" exception=(e, catch_backtrace())
+            if e isa Base.IOError && !isopen(w.current_socket)
+                sleep(3)
+                if isrunning(w)
+                    @error "Connection lost with worker, but the process is still running. Killing proces..." exception=(e, catch_backtrace())
+                
+                else
+                    # This is expected
+                end
+            else
+                @error "Unknown error" exception=(e, catch_backtrace()) isopen(w.current_socket)
+
+                rethrow(e)
+            end
         end
 
         return w
@@ -112,7 +124,7 @@ function _receive_loop(worker::Worker)
             
             true
         catch e
-            @error "HOST: Error deserializing data" exception=(e, catch_backtrace())
+            @warn "HOST: Error deserializing data" exception=(e, catch_backtrace())
             
             
             # TODO: read until msg boundary
@@ -129,7 +141,7 @@ function _receive_loop(worker::Worker)
                 
                 # TODO: what about channels?
             else
-                @error "HOST: Error deserializing data"
+                @error "HOST: Error deserializing data, and no msg_id was set."
                 continue
             end
         end
