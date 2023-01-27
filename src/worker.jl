@@ -142,17 +142,9 @@ end
 
 
 
+const _channel_cache = Dict{UInt64, Channel}()
 
 
-# function handle(::Val{:channel}, socket, msg, msg_id::MsgID)
-#     channel = eval(msg.expr)
-#     while isopen(channel) && isopen(socket)
-#         serialize(socket, take!(channel))
-#     end
-#     isopen(socket) && close(socket)
-#     isopen(channel) && close(channel)
-#     return
-# end
 
 if abspath(PROGRAM_FILE) == @__FILE__
     main()

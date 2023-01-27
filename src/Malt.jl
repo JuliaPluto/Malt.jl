@@ -198,10 +198,6 @@ _new_do_msg(f::Function, args, kwargs) = (
     true,
 )
 
-_new_channel_msg(expr) = (
-    expr,
-)
-
 
 
 
@@ -231,7 +227,7 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
 
     msg_id = (worker.current_message_id += MsgID(1))::MsgID
     if expect_reply
-        worker.expected_replies[msg_id] = Channel{WorkerResult}(0)
+        worker.expected_replies[msg_id] = Channel{WorkerResult}(1)
     end
 
     io = worker.current_socket
@@ -401,20 +397,34 @@ Create a channel to communicate with worker `w`. `expr` must be an expression
 that evaluates to a Channel. `expr` should assign the Channel to a (global) variable
 so the worker has a handle that can be used to send messages back to the manager.
 """
-function worker_channel(w::Worker, expr)::Channel
-    # Send message
-    s = Sockets.connect(w.port)
-    serialize(s, _new_channel_msg(expr))
-
-    # Return channel
-    Channel(function (channel)
-        while isopen(channel) && isopen(s) && !eof(s)
-            put!(channel, deserialize(s))
-        end
-        close(s)
-        return
-    end)
+function worker_channel(w::Worker, expr)
+    RemoteChannel(w, expr)
 end
+
+
+struct RemoteChannel{T} <: AbstractChannel{T}
+    worker::Worker
+    id::UInt64
+    
+    function RemoteChannel{T}(worker::Worker, expr) where T
+        
+        id = (worker.current_message_id += MsgID(1))::MsgID
+        remote_eval_wait(Main, worker, quote
+            Main._channel_cache[$id] = $expr
+        end)
+        new{T}(worker, id)
+    end
+    
+    RemoteChannel(w::Worker, expr) = RemoteChannel{Any}(w, expr)
+end
+
+Base.take!(rc::RemoteChannel) = remote_eval_fetch(Main, rc.worker, :(take!(Main._channel_cache[$(rc.id)])))::eltype(rc)
+
+Base.put!(rc::RemoteChannel, v) = remote_eval_wait(Main, rc.worker, :(put!(Main._channel_cache[$(rc.id)], $v)))
+
+Base.isready(rc::RemoteChannel) = remote_eval_fetch(Main, rc.worker, :(isready(Main._channel_cache[$(rc.id)])))::Bool
+
+Base.wait(rc::RemoteChannel) = remote_eval_wait(Main, rc.worker, :(wait(Main._channel_cache[$(rc.id)])))::Bool
 
 
 ## Signals & Termination

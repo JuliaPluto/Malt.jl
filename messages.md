@@ -29,10 +29,6 @@ from_host_call_without_response
 (f, args, kwargs, this_value_is_ignored::Bool)
 
 
-from_host_channel_open
-
-(expr, )
-
 from_host_interrupt
 
 ()
@@ -48,25 +44,8 @@ from_worker_call_failure
 
 result
 
-from_worker_channel_value
-
-value
 
 
 
-
-
-
-
-
-
-(expects_response::Bool, response_id::UInt16, )
-(expects_response::Bool, response_id::UInt16, )
-
-
-
-
-
-(channel_id)
 
 

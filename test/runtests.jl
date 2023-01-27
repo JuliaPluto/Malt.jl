@@ -49,23 +49,52 @@ end
 end
 
 
-# @testset "Worker channels" begin
-#     w = m.Worker()
+@testset "Worker channels" begin
+    w = m.Worker()
 
-#     lc = m.worker_channel(w, :(rc = Channel()))
+    channel_size = 20
+    
+    lc = m.worker_channel(w, :(rc = Channel($channel_size)))
+    
+    @test lc isa AbstractChannel
 
-#     @testset for _i in 1:100
-#         n = rand(Int)
+    @testset for _i in 1:10
+        n = rand(Int)
 
-#         m.remote_eval(Main, w, quote
-#             put!(rc, $(n))
-#         end)
+        m.remote_eval(Main, w, quote
+            put!(rc, $(n))
+        end)
 
-#         @test take!(lc) === n
-#     end
+        @test take!(lc) === n
+        
+        put!(lc, n)
+        @test take!(lc) === n
+        put!(lc, n)
+        put!(lc, n)
+        @test take!(lc) === n
+        @test take!(lc) === n
+        
+    end
+    
+    
+    
+    t = @async begin
+        for i in 1:2*channel_size
+            @test take!(lc) == i
+        end
+        @test !isready(lc)
+    end
+    
+    for i in 1:2*channel_size
+        put!(lc, i)
+    end
+    
+    wait(t)
+    
+    
 
-#     m.stop(w)
-# end
+    m.stop(w)
+end
 
 @testset "Signals" begin
     w = m.Worker()
@@ -153,7 +182,17 @@ end
         end),
     )
     @test m.remotecall_fetch(&, w, true, true)
-
+    
+    
+    # TODO
+    # @test_throws(
+    #     Exception,
+    #     m.worker_channel(w, :(123))
+    # )
+    # @test_throws(
+    #     Exception,
+    #     m.worker_channel(w, :(sqrt(-1)))
+    # )
 
     # The worker should be able to handle all that throwing
     @test m.isrunning(w)
