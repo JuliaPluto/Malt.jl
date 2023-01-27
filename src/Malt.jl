@@ -11,7 +11,7 @@ using Sockets: Sockets
 
 using RelocatableFolders: RelocatableFolders
 
-include("./MsgType.jl")
+include("./shared.jl")
 
 # ENV["JULIA_DEBUG"] = @__MODULE__
 
@@ -66,9 +66,8 @@ mutable struct Worker
 
         # Connect
         socket = Sockets.connect(port)
-        @static if isdefined(Base, :buffer_writes) && hasmethod(Base.buffer_writes, (Base.LibuvStream, Int))
-            Base.buffer_writes(socket, BUFFER_SIZE)
-        end
+        _buffer_writes(socket)
+        
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
@@ -76,69 +75,59 @@ mutable struct Worker
         )
         atexit(() -> stop(w))
 
-        @async try
-            _receive_loop(w)
-        catch e
-            if e isa Base.IOError && !isopen(w.current_socket)
-                sleep(3)
-                if isrunning(w)
-                    @error "Connection lost with worker, but the process is still running. Killing proces..." exception = (e, catch_backtrace())
-
-                else
-                    # This is expected
-                end
-            else
-                @error "Unknown error" exception = (e, catch_backtrace()) isopen(w.current_socket)
-
-                rethrow(e)
-            end
-        end
+        _receive_loop(w)
 
         return w
     end
 end
 
 
+
 # TODO
 function _receive_loop(worker::Worker)
     @debug "HOST: Starting receive loop" worker
-
-    while isopen(worker.current_socket) && !eof(worker.current_socket)
-        local msg_type, msg_id, msg_data
-
-        success = try
+    @async while true
+        try
+            if !isopen(worker.current_socket)
+                break
+            end
+            if eof(worker.current_socket)
+                break
+            end
+            local msg_type, msg_id, msg_data
             @debug "HOST: Waiting for message"
 
             msg_type = read(worker.current_socket, UInt8)
             msg_id = read(worker.current_socket, MsgID)
-            @debug "HOST: 1" msg_type msg_id
 
-            msg_data = deserialize(worker.current_socket)
-            @debug "HOST: 2" msg_data
-
-            true
-        catch e
-            # @warn "HOST: Error deserializing data" exception=(e, catch_backtrace())
-
-            false
-        finally
-            discard_until_boundary(worker.current_socket)
-        end
-
-        if !success
-            if @isdefined(msg_id)
-                msg_data = ErrorException("failed to deserialize data from worker")
-
-                msg_type = MsgType.special_serialization_failure
-
-                # TODO: what about channels?
-            else
-                @error "HOST: Error deserializing data, and no msg_id was set."
-                continue
+            success = try
+                msg_data = deserialize(worker.current_socket)
+                true
+            catch e
+                # @warn "HOST: Error deserializing data" exception=(e, catch_backtrace())
+                false
+            finally
+                _discard_until_boundary(worker.current_socket)
             end
-        end
 
-        if msg_type === MsgType.from_worker_call_result || msg_type === MsgType.from_worker_call_failure || msg_type === MsgType.special_serialization_failure
+            if !success
+                if @isdefined(msg_id)
+                    msg_data = ErrorException("failed to deserialize data from worker")
+
+                    msg_type = MsgType.special_serialization_failure
+
+                    # TODO: what about channels?
+                else
+                    @error "HOST: Error deserializing data, and no msg_id was set."
+                    continue
+                end
+            end
+
+            # msg_type will be one of:
+            #  MsgType.from_worker_call_result
+            #  MsgType.from_worker_call_failure
+            #  MsgType.special_serialization_failure
+
             c = get(worker.expected_replies, msg_id, nothing)
             if c isa Channel{WorkerResult}
                 put!(c, WorkerResult(
@@ -146,13 +135,30 @@ function _receive_loop(worker::Worker)
                     msg_data
                 ))
             else
-                @error "Received unexpected response" msg_type msg_id msg_data
+                @error "HOST: Received a response, but I didn't ask for anything" msg_type msg_id msg_data
             end
-        else
-            @error "TODO NOT YET IMPLEMENTED"
-        end
 
-        @debug("HOST: Received message", msg_data)
+            @debug("HOST: Received message", msg_data)
+        catch e
+            if e isa InterruptException
+                @debug "HOST: Interrupted during receive loop."
+                _rethrow_to_repl(e)
+            elseif e isa Base.IOError && !isopen(worker.current_socket)
+                sleep(3)
+                if isrunning(worker)
+                    @error "Connection lost with worker, but the process is still running. Killing proces..." exception = (e, catch_backtrace())
+                    
+                    kill(worker)
+                else
+                    # This is a clean exit
+                end
+                break
+            else
+                @error "Unknown error" exception = (e, catch_backtrace()) isopen(worker.current_socket)
+
+                break
+            end
+        end
     end
     @debug("HOST: receive loop ended", worker)
 end
@@ -217,19 +223,9 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
         worker.expected_replies[msg_id] = Channel{WorkerResult}(1)
     end
 
-    @debug("sending message", msg_data)
+    @debug("HOST: sending message", msg_data)
 
-    io = worker.current_socket
-    lock(io)
-    try
-        write(io, msg_type)
-        write(io, msg_id)
-        serialize(io, msg_data)
-        write(io, MSG_BOUNDARY)
-        flush(io)
-    finally
-        unlock(io)
-    end
+    _serialize_msg(worker.current_socket, msg_type, msg_id, msg_data)
 
     return msg_id
 end
@@ -240,7 +236,7 @@ Low-level: wait for a response to a previously sent message. Returns the respons
 function _wait_for_response(worker::Worker, msg_id::MsgID)
     if haskey(worker.expected_replies, msg_id)
         c = worker.expected_replies[msg_id]
-        @debug("waiting for response of", msg_id)
+        @debug("HOST: waiting for response of", msg_id)
         response = take!(c)
         delete!(worker.expected_replies, msg_id)
         return unwrap_worker_result(response)
@@ -482,6 +478,28 @@ function interrupt(w::Worker)
         _send_msg(w, MsgType.from_host_interrupt, (), false)
     else
         Base.kill(w.proc, Base.SIGINT)
+    end
+end
+
+
+
+
+
+# Based on `Base.task_done_hook`
+function _rethrow_to_repl(e::InterruptException)
+    if isdefined(Base, :active_repl_backend) &&
+        isdefined(Base.active_repl_backend, :backend_task) &&
+        isdefined(Base.active_repl_backend, :in_eval) &&
+        isdefined(Base.active_repl_backend.backend_task, :state) &&
+        Base.active_repl_backend.backend_task.state === :runnable &&
+        (isdefined(Base, :Workqueue) || isempty(Base.Workqueue)) &&
+        Base.active_repl_backend.in_eval
+        
+        @debug "HOST: Rethrowing interrupt to REPL"
+        @async Base.schedule(Base.active_repl_backend.backend_task, e; error=true)
+    else
+        @debug "HOST: Don't know what to do with this interrupt, rethrowing" exception=(e, catch_backtrace())
+        rethrow(e)
     end
 end
 

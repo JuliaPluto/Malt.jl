@@ -7,7 +7,7 @@ Base.exit_on_sigint(false)
 
 # ENV["JULIA_DEBUG"] = @__MODULE__
 
-include("./MsgType.jl")
+include("./shared.jl")
 
 ## TODO:
 ## * Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
@@ -39,19 +39,37 @@ function serve(server::Sockets.TCPServer)
     while isopen(server)
         try
             # Wait for new request
+            @debug("WORKER: Waiting for new connection")
             client_connection = Sockets.accept(server)
-            @debug("New connection", client_connection)
+            @debug("WORKER: New connection", client_connection)
+            
+            # Set network parameters, this is copied from Distributed
+            Sockets.nagle(client_connection, false)
+            Sockets.quickack(client_connection, true)
+            _buffer_writes(client_connection)
 
             # Handle request asynchronously
             latest = @async while true
-                # Set network parameters, this is copied from Distributed
-                Sockets.nagle(client_connection, false)
-                Sockets.quickack(client_connection, true)
-                @static if isdefined(Base, :buffer_writes) && hasmethod(Base.buffer_writes, (Base.LibuvStream, Int))
-                    Base.buffer_writes(client_connection, BUFFER_SIZE)
+                try
+                    if !isopen(client_connection)
+                        @debug("WORKER: client_connection closed.")
+                        break
+                    end
+                    # this will block while waiting for new data
+                    if eof(client_connection)
+                        @debug("WORKER: eof on client_connection.")
+                        break
+                    end
+                catch e
+                    if e isa InterruptException
+                        @debug("WORKER: Caught interrupt while waiting for incoming data, ignoring...")
+                        continue # and go back to waiting for incoming data
+                    else
+                        @error("WORKER: Caught exception while waiting for incoming data, ignoring...", exception = (e, backtrace()))
+                        continue # will go back to isopen(client_connection)                        
+                    end
                 end
-
-                if !eof(client_connection)
+                try
 
                     msg_type = read(client_connection, UInt8)
                     msg_id = read(client_connection, MsgID)
@@ -60,7 +78,7 @@ function serve(server::Sockets.TCPServer)
                     catch err
                         err, false
                     finally
-                        discard_until_boundary(client_connection)
+                        _discard_until_boundary(client_connection)
                     end
 
                     if !success
@@ -68,6 +86,7 @@ function serve(server::Sockets.TCPServer)
                     end
 
                     if msg_type === MsgType.from_host_interrupt
+                        @debug("WORKER: Received interrupt message")
                         interrupt(latest)
                     else
                         @debug("WORKER: Received message", msg_data)
@@ -75,16 +94,20 @@ function serve(server::Sockets.TCPServer)
                         @debug("WORKER: handled")
 
                     end
+                catch e
+                    if e isa InterruptException
+                        @debug("WORKER: Caught interrupt")
+                    else
+                        @error("WORKER: Caught exception", exception = (e, backtrace()))
+                    end
                 end
             end
         catch e
             if e isa InterruptException
-                @debug("WORKER: Caught interrupt!")
+                @debug("WORKER: Caught interrupt while waiting for connection, ignoring...")
             else
-                @error("WORKER: Caught exception!", exception = (e, backtrace()))
+                @error("WORKER: Caught exception while waiting for connection, ignoring...", exception = (e, backtrace()))
             end
-            interrupt(latest)
-            continue
         end
     end
     @debug("WORKER: Closed server socket. Bye!")
@@ -93,24 +116,6 @@ end
 # Check if task is still running before throwing interrupt
 interrupt(t::Task) = istaskdone(t) || Base.schedule(t, InterruptException(); error=true)
 interrupt(::Nothing) = nothing
-
-"""
-Low-level: send a message to the host.
-"""
-function _send_msg(io, msg_type::UInt8, msg_id::MsgID, msg_data)
-    lock(io)
-    try
-        write(io, msg_type)
-        write(io, msg_id)
-        serialize(io, msg_data)
-        write(io, MSG_BOUNDARY)
-        flush(io)
-    finally
-        unlock(io)
-    end
-
-    return nothing
-end
 
 
 function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id::MsgID)
@@ -126,7 +131,7 @@ function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id
         (false, e)
     end
 
-    _send_msg(
+    _serialize_msg(
         socket,
         success ? MsgType.from_worker_call_result : MsgType.from_worker_call_failure,
         msg_id,

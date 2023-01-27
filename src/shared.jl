@@ -12,7 +12,11 @@ const MsgType = (
 
 const MsgID = UInt64
 
-const BUFFER_SIZE = 4 * Base.SZ_UNBUFFERED_IO
+const BUFFER_SIZE = 4 * 65536 # 4 * Base.SZ_UNBUFFERED_IO
+# Future-compat version of Base.buffer_writes
+_buffer_writes(io) = @static if isdefined(Base, :buffer_writes) && hasmethod(Base.buffer_writes, (Base.LibuvStream, Int))
+    Base.buffer_writes(io, BUFFER_SIZE)
+end
 
 # from Distributed.jl:
 #
@@ -22,6 +26,23 @@ const BUFFER_SIZE = 4 * Base.SZ_UNBUFFERED_IO
 # with message contents is negligible.
 const MSG_BOUNDARY = UInt8[0x79, 0x8e, 0x8e, 0xf5, 0x6e, 0x9b, 0x2e, 0x97, 0xd5, 0x7d]
 
-function discard_until_boundary(io::IO)
+
+
+function _discard_until_boundary(io::IO)
     readuntil(io, MSG_BOUNDARY)
+end
+
+function _serialize_msg(io::IO, msg_type::UInt8, msg_id::MsgID, msg_data::Any)
+    lock(io)
+    try
+        write(io, msg_type)
+        write(io, msg_id)
+        serialize(io, msg_data)
+        write(io, MSG_BOUNDARY)
+        flush(io)
+    finally
+        unlock(io)
+    end
+
+    return nothing
 end
