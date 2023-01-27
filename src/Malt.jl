@@ -66,8 +66,8 @@ mutable struct Worker
 
         # Connect
         socket = Sockets.connect(port)
-        @static if isdefined(Base, :buffer_writes) && hasmethod(Base.buffer_writes, (IO,))
-            Base.buffer_writes(socket)
+        @static if isdefined(Base, :buffer_writes) && hasmethod(Base.buffer_writes, (Base.LibuvStream, Int))
+            Base.buffer_writes(socket, BUFFER_SIZE)
         end
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
@@ -76,9 +76,7 @@ mutable struct Worker
         )
         atexit(() -> stop(w))
 
-
-        @debug "HOST: Starting receive loop" worker
-        receive_task = @async try
+        @async try
             _receive_loop(w)
         catch e
             if e isa Base.IOError && !isopen(w.current_socket)
@@ -101,9 +99,6 @@ mutable struct Worker
 end
 
 
-
-
-
 # TODO
 function _receive_loop(worker::Worker)
     @debug "HOST: Starting receive loop" worker
@@ -118,23 +113,16 @@ function _receive_loop(worker::Worker)
             msg_id = read(worker.current_socket, MsgID)
             @debug "HOST: 1" msg_type msg_id
 
-
             msg_data = deserialize(worker.current_socket)
             @debug "HOST: 2" msg_data
-
-
-            # TODO: msg boundary
-            # _discard_msg_boundary = deserialize(worker.current_socket)
 
             true
         catch e
             # @warn "HOST: Error deserializing data" exception=(e, catch_backtrace())
 
-
-            # TODO: read until msg boundary
-            # _discard_msg_boundary = deserialize(worker.current_socket)
-
             false
+        finally
+            discard_until_boundary(worker.current_socket)
         end
 
         if !success
@@ -221,7 +209,6 @@ _new_do_msg(f::Function, args, kwargs) = (
 Low-level: send a message to a worker. Returns a `msg_id::UInt16`, which can be used to wait for a response with `_wait_for_response`.
 """
 function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool=true)::MsgID
-
     _assert_is_running(worker)
     # _ensure_connected(worker)
 
@@ -230,15 +217,19 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
         worker.expected_replies[msg_id] = Channel{WorkerResult}(1)
     end
 
+    @debug("sending message", msg_data)
+
     io = worker.current_socket
-
-    write(io, msg_type)
-    write(io, msg_id)
-    serialize(io, msg_data)
-    # TODO: send msg boundary
-    # serialize(io, MSG_BOUNDARY)
-
-    flush(io)
+    lock(io)
+    try
+        write(io, msg_type)
+        write(io, msg_id)
+        serialize(io, msg_data)
+        write(io, MSG_BOUNDARY)
+        flush(io)
+    finally
+        unlock(io)
+    end
 
     return msg_id
 end
@@ -247,8 +238,9 @@ end
 Low-level: wait for a response to a previously sent message. Returns the response. Blocking call.
 """
 function _wait_for_response(worker::Worker, msg_id::MsgID)
-    c = get(worker.expected_replies, msg_id, nothing)
-    if c isa Channel{WorkerResult}
+    if haskey(worker.expected_replies, msg_id)
+        c = worker.expected_replies[msg_id]
+        @debug("waiting for response of", msg_id)
         response = take!(c)
         delete!(worker.expected_replies, msg_id)
         return unwrap_worker_result(response)

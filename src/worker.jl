@@ -47,18 +47,25 @@ function serve(server::Sockets.TCPServer)
                 # Set network parameters, this is copied from Distributed
                 Sockets.nagle(client_connection, false)
                 Sockets.quickack(client_connection, true)
-                @static if isdefined(Base, :buffer_writes) && hasmethod(Base.buffer_writes, (IO,))
-                    Base.buffer_writes(client_connection)
+                @static if isdefined(Base, :buffer_writes) && hasmethod(Base.buffer_writes, (Base.LibuvStream, Int))
+                    Base.buffer_writes(client_connection, BUFFER_SIZE)
                 end
 
                 if !eof(client_connection)
 
                     msg_type = read(client_connection, UInt8)
                     msg_id = read(client_connection, MsgID)
-                    msg_data = deserialize(client_connection)
+                    msg_data, success = try
+                        deserialize(client_connection), true
+                    catch err
+                        err, false
+                    finally
+                        discard_until_boundary(client_connection)
+                    end
 
-                    # TODO: msg boundary
-                    # _discard_msg_boundary = deserialize(client_connection)
+                    if !success
+                        continue
+                    end
 
                     if msg_type === MsgType.from_host_interrupt
                         interrupt(latest)
@@ -87,21 +94,21 @@ end
 interrupt(t::Task) = istaskdone(t) || Base.schedule(t, InterruptException(); error=true)
 interrupt(::Nothing) = nothing
 
-
-
 """
 Low-level: send a message to the host.
 """
-function _send_msg(host_socket, msg_type::UInt8, msg_id::MsgID, msg_data)
-    io = host_socket
+function _send_msg(io, msg_type::UInt8, msg_id::MsgID, msg_data)
+    lock(io)
+    try
+        write(io, msg_type)
+        write(io, msg_id)
+        serialize(io, msg_data)
+        write(io, MSG_BOUNDARY)
+        flush(io)
+    finally
+        unlock(io)
+    end
 
-    write(io, msg_type)
-    write(io, msg_id)
-    serialize(io, msg_data)
-    # TODO: send msg boundary
-    # serialize(host_socket, MSG_BOUNDARY)
-
-    flush(io)
     return nothing
 end
 
