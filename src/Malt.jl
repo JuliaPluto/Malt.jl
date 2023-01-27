@@ -84,7 +84,6 @@ end
 
 
 function _receive_loop(worker::Worker)
-    @debug "HOST: Starting receive loop" worker
     io = worker.current_socket
     @async while true
         try
@@ -103,7 +102,7 @@ function _receive_loop(worker::Worker)
             catch e
                 if e isa InterruptException
                     @debug("HOST: Caught interrupt while waiting for incoming data, rethrowing to REPL...")
-                    _rethrow_to_repl(e)
+                    _rethrow_to_repl(e; rethrow_regular=false)
                     continue # and go back to waiting for incoming data
                 else
                     @debug("HOST: Caught exception while waiting for incoming data, breaking", exception = (e, backtrace()))
@@ -162,7 +161,6 @@ function _receive_loop(worker::Worker)
             end
         end
     end
-    @debug("HOST: receive loop ended", worker)
 end
 
 
@@ -488,18 +486,17 @@ end
 
 
 # Based on `Base.task_done_hook`
-function _rethrow_to_repl(e::InterruptException)
+function _rethrow_to_repl(e::InterruptException; rethrow_regular::Bool=false)
     if isdefined(Base, :active_repl_backend) &&
         isdefined(Base.active_repl_backend, :backend_task) &&
         isdefined(Base.active_repl_backend, :in_eval) &&
-        isdefined(Base.active_repl_backend.backend_task, :state) &&
         Base.active_repl_backend.backend_task.state === :runnable &&
         (isdefined(Base, :Workqueue) || isempty(Base.Workqueue)) &&
         Base.active_repl_backend.in_eval
         
         @debug "HOST: Rethrowing interrupt to REPL"
         @async Base.schedule(Base.active_repl_backend.backend_task, e; error=true)
-    else
+    elseif rethrow_regular
         @debug "HOST: Don't know what to do with this interrupt, rethrowing" exception=(e, catch_backtrace())
         rethrow(e)
     end
