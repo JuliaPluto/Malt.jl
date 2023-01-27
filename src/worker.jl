@@ -40,66 +40,71 @@ function serve(server::Sockets.TCPServer)
         try
             # Wait for new request
             @debug("WORKER: Waiting for new connection")
-            client_connection = Sockets.accept(server)
-            @debug("WORKER: New connection", client_connection)
+            io = Sockets.accept(server)
+            @debug("WORKER: New connection", io)
             
             # Set network parameters, this is copied from Distributed
-            Sockets.nagle(client_connection, false)
-            Sockets.quickack(client_connection, true)
-            _buffer_writes(client_connection)
+            Sockets.nagle(io, false)
+            Sockets.quickack(io, true)
+            _buffer_writes(io)
 
             # Handle request asynchronously
             latest = @async while true
-                try
-                    if !isopen(client_connection)
-                        @debug("WORKER: client_connection closed.")
+                if !isopen(io)
+                    @debug("WORKER: io closed.")
+                    break
+                end
+                @debug "WORKER: Waiting for message"
+                msg_type = try
+                    if eof(io)
+                        @debug("HOST: io closed.")
                         break
                     end
-                    # this will block while waiting for new data
-                    if eof(client_connection)
-                        @debug("WORKER: eof on client_connection.")
-                        break
-                    end
+                    read(io, UInt8)
                 catch e
                     if e isa InterruptException
                         @debug("WORKER: Caught interrupt while waiting for incoming data, ignoring...")
                         continue # and go back to waiting for incoming data
                     else
-                        @error("WORKER: Caught exception while waiting for incoming data, ignoring...", exception = (e, backtrace()))
-                        continue # will go back to isopen(client_connection)                        
+                        @error("WORKER: Caught exception while waiting for incoming data, breaking", exception = (e, backtrace()))
+                        break
                     end
                 end
-                try
-
-                    msg_type = read(client_connection, UInt8)
-                    msg_id = read(client_connection, MsgID)
-                    msg_data, success = try
-                        deserialize(client_connection), true
-                    catch err
-                        err, false
-                    finally
-                        _discard_until_boundary(client_connection)
-                    end
-
-                    if !success
+                # this next line can't fail
+                msg_id = read(io, MsgID)
+                
+                msg_data, success = try
+                    deserialize(io), true
+                catch err
+                    err, false
+                finally
+                    _discard_until_boundary(io)
+                end
+                
+                if !success
+                    if msg_type === MsgType.from_host_call_with_response
+                        msg_type = MsgType.special_serialization_failure
+                    else
                         continue
                     end
-
+                end
+                
+                try
                     if msg_type === MsgType.from_host_interrupt
                         @debug("WORKER: Received interrupt message")
                         interrupt(latest)
                     else
                         @debug("WORKER: Received message", msg_data)
-                        handle(Val(msg_type), client_connection, msg_data, msg_id)
+                        handle(Val(msg_type), io, msg_data, msg_id)
                         @debug("WORKER: handled")
-
                     end
                 catch e
                     if e isa InterruptException
-                        @debug("WORKER: Caught interrupt")
+                        @debug("WORKER: Caught interrupt while handling message, ignoring...")
                     else
-                        @error("WORKER: Caught exception", exception = (e, backtrace()))
+                        @error("WORKER: Caught exception while handling message", exception = (e, backtrace()))
                     end
+                    handle(Val(MsgType.special_serialization_failure), io, e, msg_id)
                 end
             end
         catch e
@@ -152,6 +157,14 @@ function handle(::Val{MsgType.from_host_call_without_response}, socket, msg, msg
     end
 end
 
+function handle(::Val{MsgType.special_serialization_failure}, socket, msg, msg_id::MsgID)
+    _serialize_msg(
+        socket,
+        MsgType.from_worker_call_failure,
+        msg_id,
+        msg
+    )
+end
 
 
 const _channel_cache = Dict{UInt64, Channel}()

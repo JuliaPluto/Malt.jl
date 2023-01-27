@@ -83,44 +83,46 @@ end
 
 
 
-# TODO
 function _receive_loop(worker::Worker)
     @debug "HOST: Starting receive loop" worker
+    io = worker.current_socket
     @async while true
         try
-            if !isopen(worker.current_socket)
+            if !isopen(io)
+                @debug("HOST: io closed.")
                 break
             end
-            if eof(worker.current_socket)
-                break
-            end
-            local msg_type, msg_id, msg_data
+           
             @debug "HOST: Waiting for message"
-
-            msg_type = read(worker.current_socket, UInt8)
-            msg_id = read(worker.current_socket, MsgID)
-
-            success = try
-                msg_data = deserialize(worker.current_socket)
-                true
+            msg_type = try
+                if eof(io)
+                    @debug("HOST: io closed.")
+                    break
+                end
+                read(io, UInt8)
             catch e
-                # @warn "HOST: Error deserializing data" exception=(e, catch_backtrace())
-                false
+                if e isa InterruptException
+                    @debug("HOST: Caught interrupt while waiting for incoming data, rethrowing to REPL...")
+                    _rethrow_to_repl(e)
+                    continue # and go back to waiting for incoming data
+                else
+                    @debug("HOST: Caught exception while waiting for incoming data, breaking", exception = (e, backtrace()))
+                    break
+                end
+            end
+            # this next line can't fail
+            msg_id = read(io, MsgID)
+            
+            msg_data, success = try
+                deserialize(io), true
+            catch err
+                err, false
             finally
-                _discard_until_boundary(worker.current_socket)
+                _discard_until_boundary(io)
             end
 
             if !success
-                if @isdefined(msg_id)
-                    msg_data = ErrorException("failed to deserialize data from worker")
-
-                    msg_type = MsgType.special_serialization_failure
-
-                    # TODO: what about channels?
-                else
-                    @error "HOST: Error deserializing data, and no msg_id was set."
-                    continue
-                end
+                msg_type = MsgType.special_serialization_failure
             end
 
             # msg_type will be one of:
@@ -143,7 +145,7 @@ function _receive_loop(worker::Worker)
             if e isa InterruptException
                 @debug "HOST: Interrupted during receive loop."
                 _rethrow_to_repl(e)
-            elseif e isa Base.IOError && !isopen(worker.current_socket)
+            elseif e isa Base.IOError && !isopen(io)
                 sleep(3)
                 if isrunning(worker)
                     @error "Connection lost with worker, but the process is still running. Killing proces..." exception = (e, catch_backtrace())
@@ -154,7 +156,7 @@ function _receive_loop(worker::Worker)
                 end
                 break
             else
-                @error "Unknown error" exception = (e, catch_backtrace()) isopen(worker.current_socket)
+                @error "Unknown error" exception = (e, catch_backtrace()) isopen(io)
 
                 break
             end
