@@ -50,7 +50,7 @@ mutable struct Worker
     port::UInt16
     proc::Base.Process
 
-    current_socket::TCPSocket
+    current_socket::Sockets.TCPSocket
     # socket_lock::ReentrantLock
 
     current_message_id::MsgID
