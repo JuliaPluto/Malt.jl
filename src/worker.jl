@@ -1,6 +1,6 @@
-using Logging
-using Serialization
-using Sockets
+using Logging: Logging, @debug
+using Serialization: serialize, deserialize
+using Sockets: Sockets
 
 ## Allow catching InterruptExceptions
 Base.exit_on_sigint(false)
@@ -10,21 +10,21 @@ Base.exit_on_sigint(false)
 include("./MsgType.jl")
 include("./BufferedIO.jl")
 
-# ## TODO:
-# ## * Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
-# ## * Define a worker specific LogLevel
-# global_logger(ConsoleLogger(stderr, Logging.Debug))
+## TODO:
+## * Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
+## * Define a worker specific LogLevel
+# Logging.global_logger(Logging.ConsoleLogger(stderr, Logging.Debug))
 
 function main()
     # Use the same port hint as Distributed
-    port_hint = 9000 + (getpid() % 1000)
-    port, server = listenany(port_hint)
+    port_hint = 9000 + (Sockets.getpid() % 1000)
+    port, server = Sockets.listenany(port_hint)
 
     # Write port number to stdout to let main process know where to send requests
     @debug("WORKER: new port", port)
     println(stdout, port)
     flush(stdout)
-    
+
     # Set network parameters, this is copied from Distributed
     Sockets.nagle(server, false)
     Sockets.quickack(server, true)
@@ -40,31 +40,31 @@ function serve(server::Sockets.TCPServer)
     while isopen(server)
         try
             # Wait for new request
-            client_connection = accept(server)
+            client_connection = Sockets.accept(server)
             @debug("New connection", client_connection)
-            
+
             # Handle request asynchronously
             latest = @async while true
                 # Set network parameters, this is copied from Distributed
                 Sockets.nagle(client_connection, false)
                 Sockets.quickack(client_connection, true)
-                
+
                 if !eof(client_connection)
-                    
+
                     msg_type = read(client_connection, UInt8)
                     msg_id = read(client_connection, MsgID)
                     msg_data = deserialize(client_connection)
-                    
+
                     # TODO: msg boundary
                     # _discard_msg_boundary = deserialize(client_connection)
-                    
+
                     if msg_type === MsgType.from_host_interrupt
                         interrupt(latest)
                     else
                         @debug("WORKER: Received message", msg_data)
                         handle(Val(msg_type), client_connection, msg_data, msg_id)
                         @debug("WORKER: handled")
-                        
+
                     end
                 end
             end
@@ -72,7 +72,7 @@ function serve(server::Sockets.TCPServer)
             if e isa InterruptException
                 @debug("WORKER: Caught interrupt!")
             else
-                @error("WORKER: Caught exception!", exception=(e, backtrace()))
+                @error("WORKER: Caught exception!", exception = (e, backtrace()))
             end
             interrupt(latest)
             continue
@@ -97,15 +97,15 @@ function _send_msg(host_socket, msg_type::UInt8, msg_id::MsgID, msg_data)
     # serialize(io, msg_data)
     # seekstart(io)
     # write(host_socket, io)
-    
+
     @debug "asdf" msg_type msg_data
-    
-    
+
+
     # write(host_socket, msg_type)
     # write(host_socket, msg_id)
     # serialize(host_socket, msg_data)
-    
-    
+
+
     io = BufferedIO(host_socket; buffersize=8192)
     # Change the buffersize (while keeping it fixed on the server side) and run our benchmarks. Results:
     # 32 is too small
@@ -126,13 +126,13 @@ function _send_msg(host_socket, msg_type::UInt8, msg_id::MsgID, msg_data)
     # 1048576 is good
     # 2097152 is too big
     # 16777216 is too big
-    
+
     write(io, msg_type)
     write(io, msg_id)
     serialize(io, msg_data)
     # TODO: send msg boundary
     # serialize(host_socket, MSG_BOUNDARY)
-    
+
     flush(io)
     return nothing
 end
@@ -140,21 +140,21 @@ end
 
 function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id::MsgID)
     f, args, kwargs, respond_with_nothing = msg
-    
+
     success, result = try
         result = f(args...; kwargs...)
-        
+
         # @debug("WORKER: Evaluated result", result)
         (true, respond_with_nothing ? nothing : result)
     catch e
         # @debug("WORKER: Got exception!", e)
         (false, e)
     end
-    
+
     _send_msg(
-        socket, 
-        success ? MsgType.from_worker_call_result : MsgType.from_worker_call_failure, 
-        msg_id, 
+        socket,
+        success ? MsgType.from_worker_call_result : MsgType.from_worker_call_failure,
+        msg_id,
         result
     )
 end
@@ -162,7 +162,7 @@ end
 
 function handle(::Val{MsgType.from_host_call_without_response}, socket, msg, msg_id::MsgID)
     f, args, kwargs, _ignored = msg
-    
+
     try
         f(args...; kwargs...)
     catch e

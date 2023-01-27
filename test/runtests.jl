@@ -36,7 +36,7 @@ end
 
     m.remote_eval_wait(Main, w, :(module Stub end))
 
-    str= "x is in Stub"
+    str = "x is in Stub"
 
     m.remote_eval_wait(Main, w, quote
         Core.eval(Stub, :(x = $$str))

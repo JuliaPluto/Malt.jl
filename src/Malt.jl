@@ -5,13 +5,11 @@ these functions are not stable.
 """
 module Malt
 
-import Base: Process, Channel
-import Serialization: serialize, deserialize
+# using Logging: Logging, @debug
+using Serialization: serialize, deserialize
+using Sockets: Sockets
 
-# using Logging
-using Sockets
-
-import RelocatableFolders
+using RelocatableFolders: RelocatableFolders
 
 include("./MsgType.jl")
 include("./BufferedIO.jl")
@@ -50,48 +48,48 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 """
 mutable struct Worker
     port::UInt16
-    proc::Process
-    
+    proc::Base.Process
+
     current_socket::TCPSocket
     # socket_lock::ReentrantLock
-    
+
     current_message_id::MsgID
     expected_replies::Dict{MsgID,Channel{WorkerResult}}
-    
-    function Worker(;exeflags=[])
+
+    function Worker(; env=String[], exeflags=[])
         # Spawn process
-        cmd = _get_worker_cmd(;exeflags)
+        cmd = _get_worker_cmd(; env, exeflags)
         proc = open(cmd, "w+")
 
         # Block until reading the port number of the process (from its stdout)
         port_str = readline(proc)
         port = parse(UInt16, port_str)
-        
+
         # Connect
-        socket = connect(port)
+        socket = Sockets.connect(port)
         @debug "HOST: Starting receive loop" worker
-        
+
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
-        w = finalizer(w -> @async(stop(w)), 
+        w = finalizer(w -> @async(stop(w)),
             new(port, proc, socket, MsgID(0), Dict{MsgID,Channel{WorkerResult}}())
         )
         atexit(() -> stop(w))
-        
-        
+
+
         receive_task = @async try
             _receive_loop(w)
         catch e
             if e isa Base.IOError && !isopen(w.current_socket)
                 sleep(3)
                 if isrunning(w)
-                    @error "Connection lost with worker, but the process is still running. Killing proces..." exception=(e, catch_backtrace())
-                
+                    @error "Connection lost with worker, but the process is still running. Killing proces..." exception = (e, catch_backtrace())
+
                 else
                     # This is expected
                 end
             else
-                @error "Unknown error" exception=(e, catch_backtrace()) isopen(w.current_socket)
+                @error "Unknown error" exception = (e, catch_backtrace()) isopen(w.current_socket)
 
                 rethrow(e)
             end
@@ -108,49 +106,49 @@ end
 # TODO
 function _receive_loop(worker::Worker)
     @debug "HOST: Starting receive loop" worker
-    
+
     while isopen(worker.current_socket) && !eof(worker.current_socket)
         local msg_type, msg_id, msg_data
-        
+
         success = try
             @debug "HOST: Waiting for message"
-            
+
             msg_type = read(worker.current_socket, UInt8)
             msg_id = read(worker.current_socket, MsgID)
             @debug "HOST: 1" msg_type msg_id
-            
-            
+
+
             msg_data = deserialize(worker.current_socket)
             @debug "HOST: 2" msg_data
-            
-            
+
+
             # TODO: msg boundary
             # _discard_msg_boundary = deserialize(worker.current_socket)
-            
+
             true
         catch e
             # @warn "HOST: Error deserializing data" exception=(e, catch_backtrace())
-            
-            
+
+
             # TODO: read until msg boundary
             # _discard_msg_boundary = deserialize(worker.current_socket)
-            
+
             false
         end
-        
+
         if !success
             if @isdefined(msg_id)
                 msg_data = ErrorException("failed to deserialize data from worker")
-                
+
                 msg_type = MsgType.special_serialization_failure
-                
+
                 # TODO: what about channels?
             else
                 @error "HOST: Error deserializing data, and no msg_id was set."
                 continue
             end
         end
-        
+
         if msg_type === MsgType.from_worker_call_result || msg_type === MsgType.from_worker_call_failure || msg_type === MsgType.special_serialization_failure
             c = get(worker.expected_replies, msg_id, nothing)
             if c isa Channel{WorkerResult}
@@ -164,8 +162,8 @@ function _receive_loop(worker::Worker)
         else
             @error "TODO NOT YET IMPLEMENTED"
         end
-        
-        @debug("HOST: Received message", msg_data) 
+
+        @debug("HOST: Received message", msg_data)
     end
     @debug("HOST: receive loop ended", worker)
 end
@@ -175,10 +173,9 @@ end
 # The entire `src` dir should be relocatable, so that worker.jl can include("MsgType.jl").
 const src_path = RelocatableFolders.@path @__DIR__
 
-function _get_worker_cmd(exe=Base.julia_cmd(); exeflags=[])
-    `$exe $exeflags $(joinpath(src_path, "worker.jl"))`
+function _get_worker_cmd(exe=Base.julia_cmd()[1]; env, exeflags)
+    return addenv(`$exe $exeflags $(joinpath(src_path, "worker.jl"))`, Base.byteenv(env))
 end
-
 
 
 
@@ -227,41 +224,41 @@ _new_channel_msg(expr) = (
 Low-level: send a message to a worker. Returns a `msg_id::UInt16`, which can be used to wait for a response with `_wait_for_response`.
 """
 function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool=true)::MsgID
-    
+
     _assert_is_running(worker)
     # _ensure_connected(worker)
-    
+
     msg_id = (worker.current_message_id += MsgID(1))::MsgID
     if expect_reply
         worker.expected_replies[msg_id] = Channel{WorkerResult}(0)
     end
-    
-    
+
+
     # io = IOBuffer() # 0
     # write(io, msg_type)
     # write(io, msg_id)
     # @time serialize(io, msg_data) # 0.000005 seconds (18 allocations: 1.406 KiB)
     # seekstart(io) # 0
     # write(worker.current_socket, io) # 0.0004, no alloc
-    
-    
+
+
 
     io = BufferedIO(worker.current_socket; buffersize=8192)
     # i didnt do an experiment to find this value. just using the same as the worker.
-    
+
     write(io, msg_type)
     write(io, msg_id)
     serialize(io, msg_data)
     # TODO: send msg boundary
     # serialize(io, MSG_BOUNDARY)
-    
+
     flush(io)
-    
+
     # write(worker.current_socket, msg_type)
     # write(worker.current_socket, msg_id)
     # serialize(worker.current_socket, msg_data)
-    
-    
+
+
 
     return msg_id
 end
@@ -321,8 +318,8 @@ julia> fetch(promise)
 """
 function remotecall(f, w::Worker, args...; kwargs...)
     _send_receive_async(
-        w, 
-        MsgType.from_host_call_with_response, 
+        w,
+        MsgType.from_host_call_with_response,
         _new_call_msg(true, f, args, kwargs),
     )
 end
@@ -334,8 +331,8 @@ Shorthand for `fetch(Malt.remotecall(…))`. Blocks and then returns the result 
 """
 function remotecall_fetch(f, w::Worker, args...; kwargs...)
     _send_receive(
-        w, 
-        MsgType.from_host_call_with_response, 
+        w,
+        MsgType.from_host_call_with_response,
         _new_call_msg(true, f, args, kwargs)
     )
 end
@@ -348,8 +345,8 @@ Shorthand for `wait(Malt.remotecall(…))`. Blocks and discards the resulting va
 """
 function remotecall_wait(f, w::Worker, args...; kwargs...)
     _send_receive(
-        w, 
-        MsgType.from_host_call_with_response, 
+        w,
+        MsgType.from_host_call_with_response,
         _new_call_msg(false, f, args, kwargs)
     )
 end
@@ -422,11 +419,11 @@ so the worker has a handle that can be used to send messages back to the manager
 """
 function worker_channel(w::Worker, expr)::Channel
     # Send message
-    s = connect(w.port)
+    s = Sockets.connect(w.port)
     serialize(s, _new_channel_msg(expr))
 
     # Return channel
-    Channel(function(channel)
+    Channel(function (channel)
         while isopen(channel) && isopen(s) && !eof(s)
             put!(channel, deserialize(s))
         end
@@ -479,7 +476,7 @@ kill(w::Worker) = Base.kill(w.proc)
 function _wait_for_exit(w::Worker; timeout_s::Real=20)
     t0 = time()
     while isrunning(w)
-        sleep(.01)
+        sleep(0.01)
         if time() - t0 > timeout_s
             error("Worker did not exit after $timeout_s seconds")
         end
