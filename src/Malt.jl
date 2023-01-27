@@ -12,7 +12,6 @@ using Sockets: Sockets
 using RelocatableFolders: RelocatableFolders
 
 include("./MsgType.jl")
-include("./BufferedIO.jl")
 
 # ENV["JULIA_DEBUG"] = @__MODULE__
 
@@ -67,8 +66,9 @@ mutable struct Worker
 
         # Connect
         socket = Sockets.connect(port)
-        @debug "HOST: Starting receive loop" worker
-
+        @static if isdefined(Base, :buffer_writes) && hasmethod(Base.buffer_writes, (IO,))
+            Base.buffer_writes(socket)
+        end
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
@@ -77,6 +77,7 @@ mutable struct Worker
         atexit(() -> stop(w))
 
 
+        @debug "HOST: Starting receive loop" worker
         receive_task = @async try
             _receive_loop(w)
         catch e
@@ -233,18 +234,7 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
         worker.expected_replies[msg_id] = Channel{WorkerResult}(0)
     end
 
-
-    # io = IOBuffer() # 0
-    # write(io, msg_type)
-    # write(io, msg_id)
-    # @time serialize(io, msg_data) # 0.000005 seconds (18 allocations: 1.406 KiB)
-    # seekstart(io) # 0
-    # write(worker.current_socket, io) # 0.0004, no alloc
-
-
-
-    io = BufferedIO(worker.current_socket; buffersize=8192)
-    # i didnt do an experiment to find this value. just using the same as the worker.
+    io = worker.current_socket
 
     write(io, msg_type)
     write(io, msg_id)
@@ -253,12 +243,6 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
     # serialize(io, MSG_BOUNDARY)
 
     flush(io)
-
-    # write(worker.current_socket, msg_type)
-    # write(worker.current_socket, msg_id)
-    # serialize(worker.current_socket, msg_data)
-
-
 
     return msg_id
 end

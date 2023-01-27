@@ -8,7 +8,6 @@ Base.exit_on_sigint(false)
 # ENV["JULIA_DEBUG"] = @__MODULE__
 
 include("./MsgType.jl")
-include("./BufferedIO.jl")
 
 ## TODO:
 ## * Don't use a global Logger. Use one for dev, and one for user code (handled by Pluto)
@@ -48,6 +47,9 @@ function serve(server::Sockets.TCPServer)
                 # Set network parameters, this is copied from Distributed
                 Sockets.nagle(client_connection, false)
                 Sockets.quickack(client_connection, true)
+                @static if isdefined(Base, :buffer_writes) && hasmethod(Base.buffer_writes, (IO,))
+                    Base.buffer_writes(client_connection)
+                end
 
                 if !eof(client_connection)
 
@@ -91,41 +93,7 @@ interrupt(::Nothing) = nothing
 Low-level: send a message to the host.
 """
 function _send_msg(host_socket, msg_type::UInt8, msg_id::MsgID, msg_data)
-    # io = IOBuffer()
-    # write(io, msg_type)
-    # write(io, msg_id)
-    # serialize(io, msg_data)
-    # seekstart(io)
-    # write(host_socket, io)
-
-    @debug "asdf" msg_type msg_data
-
-
-    # write(host_socket, msg_type)
-    # write(host_socket, msg_id)
-    # serialize(host_socket, msg_data)
-
-
-    io = BufferedIO(host_socket; buffersize=8192)
-    # Change the buffersize (while keeping it fixed on the server side) and run our benchmarks. Results:
-    # 32 is too small
-    # 64 is too small
-    # 128 is too small
-    # 256 is too small ?
-    # 512 is good
-    # 1024 is good
-    # 2048 is good
-    # 4096 is good
-    # 8192 is good
-    # 16384 is good
-    # 32768 is good
-    # 65536 is good
-    # 131072 is good
-    # 262144 is good
-    # 524288 is too big
-    # 1048576 is good
-    # 2097152 is too big
-    # 16777216 is too big
+    io = host_socket
 
     write(io, msg_type)
     write(io, msg_id)

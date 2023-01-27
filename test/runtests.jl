@@ -162,8 +162,6 @@ end
     m._wait_for_exit(w)
 end
 
-include("BufferedIO.jl")
-
 include("benchmark.jl")
 
 
