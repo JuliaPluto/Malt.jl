@@ -12,6 +12,8 @@ const MsgType = (
 
 const MsgID = UInt64
 
+const BUFFER_SIZE = 4 * Base.SZ_UNBUFFERED_IO
+
 # Boundary inserted between messages on the wire, used for recovering
 # from deserialization errors. Picked arbitrarily.
 # A size of 10 bytes indicates ~ ~1e24 possible boundaries, so chance of collision

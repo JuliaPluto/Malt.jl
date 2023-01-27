@@ -48,14 +48,13 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 mutable struct Worker
     port::UInt16
     proc::Process
-    
+
     current_socket::TCPSocket
-    write_end::IO
     # socket_lock::ReentrantLock
-    
+
     current_message_id::MsgID
     expected_replies::Dict{MsgID,Channel}
-    
+
     function Worker(;exeflags=[])
         # Spawn process
         cmd = _get_worker_cmd(;exeflags)
@@ -64,19 +63,18 @@ mutable struct Worker
         # Block until reading the port number of the process (from its stdout)
         port_str = readline(proc)
         port = parse(UInt16, port_str)
-        
+
         # Connect
         socket = connect(port)
-        @debug "HOST: Starting receive loop" worker
-        
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)), 
-            new(port, proc, socket, Base.buffer_writes(socket), MsgID(0), Dict{MsgID,Channel}())
+            new(port, proc, Base.buffer_writes(socket, BUFFER_SIZE), MsgID(0), Dict{MsgID,Channel}())
         )
         atexit(() -> stop(w))
-        
-        
+
+        @debug "HOST: Starting receive loop" w
+
         receive_task = @async try
             _receive_loop(w)
         catch e
@@ -214,17 +212,15 @@ _new_channel_msg(expr) = (
 Low-level: send a message to a worker. Returns a `msg_id::UInt16`, which can be used to wait for a response with `_wait_for_response`.
 """
 function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool=true)::MsgID
-    
     _assert_is_running(worker)
     # _ensure_connected(worker)
-    
+
     msg_id = (worker.current_message_id += MsgID(1))::MsgID
     if expect_reply
         worker.expected_replies[msg_id] = Channel{Any}(0)
     end
-    
-    
-    io = worker.write_end
+
+    io = worker.current_socket
     lock(io)
     try
         write(io, msg_type)

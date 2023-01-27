@@ -46,7 +46,7 @@ function serve(server::Sockets.TCPServer)
                 # Set network parameters, this is copied from Distributed
                 Sockets.nagle(client_connection, false)
                 Sockets.quickack(client_connection, true)
-                client_writer = Base.buffer_writes(client_connection)
+                Base.buffer_writes(client_connection, BUFFER_SIZE)
 
                 if !eof(client_connection)
                     
@@ -71,7 +71,7 @@ function serve(server::Sockets.TCPServer)
                         interrupt(latest)
                     else
                         @debug("WORKER: Received message", msg_data)
-                        handle(Val(msg_type), client_writer, msg_data, msg_id)
+                        handle(Val(msg_type), client_connection, msg_data, msg_id)
                         @debug("WORKER: handled")
                         
                     end
