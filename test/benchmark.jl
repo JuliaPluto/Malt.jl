@@ -66,3 +66,34 @@ const TEST_BENCHMARK = true
     
     m.stop(w)
 end
+
+
+
+@testset "Benchmark launch" begin
+    function launch_with_malt()
+        w = m.Worker()
+        @assert(2 == m.remotecall_fetch(+, w, 1, 1))
+        m.stop(w)
+        isdefined(m, :_wait_for_exit) || return
+        m._wait_for_exit(w)
+    end
+
+    function launch_with_distributed()
+        p = Distributed.addprocs(1) |> only
+        @assert(2 == Distributed.remotecall_fetch(+, p, 1, 1))
+        Distributed.rmprocs(p) |> wait
+    end
+    
+    launch_with_malt()
+    launch_with_distributed()
+    
+    t1 = @belapsed $launch_with_malt()
+    t2 = @belapsed $launch_with_distributed()
+    ratio = t1 / t2
+    
+    @info "Launch benchmark" ratio t1 t2 
+
+    if TEST_BENCHMARK
+        @test ratio < 1.1
+    end
+end
