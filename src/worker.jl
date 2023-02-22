@@ -1,5 +1,5 @@
 using Logging: Logging, @debug
-using Serialization: serialize, deserialize
+using Serialization: serialize, deserialize, Serializer
 using Sockets: Sockets
 
 ## Allow catching InterruptExceptions
@@ -48,6 +48,8 @@ function serve(server::Sockets.TCPServer)
             Sockets.quickack(io, true)
             _buffer_writes(io)
 
+            serializer = Serializer(io)
+
             # Handle request asynchronously
             latest = @async while true
                 if !isopen(io)
@@ -74,7 +76,7 @@ function serve(server::Sockets.TCPServer)
                 msg_id = read(io, MsgID)
                 
                 msg_data, success = try
-                    deserialize(io), true
+                    deserialize(serializer), true
                 catch err
                     err, false
                 finally
@@ -95,7 +97,7 @@ function serve(server::Sockets.TCPServer)
                         interrupt(latest)
                     else
                         @debug("WORKER: Received message", msg_data)
-                        handle(Val(msg_type), io, msg_data, msg_id)
+                        handle(Val(msg_type), serializer, msg_data, msg_id)
                         @debug("WORKER: handled")
                     end
                 catch e
@@ -123,7 +125,7 @@ interrupt(t::Task) = istaskdone(t) || Base.schedule(t, InterruptException(); err
 interrupt(::Nothing) = nothing
 
 
-function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id::MsgID)
+function handle(::Val{MsgType.from_host_call_with_response}, serializer, msg, msg_id::MsgID)
     f, args, kwargs, respond_with_nothing = msg
 
     success, result = try
@@ -137,7 +139,7 @@ function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id
     end
 
     _serialize_msg(
-        socket,
+        serializer,
         success ? MsgType.from_worker_call_result : MsgType.from_worker_call_failure,
         msg_id,
         result
@@ -145,7 +147,7 @@ function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id
 end
 
 
-function handle(::Val{MsgType.from_host_call_without_response}, socket, msg, msg_id::MsgID)
+function handle(::Val{MsgType.from_host_call_without_response}, serializer, msg, msg_id::MsgID)
     f, args, kwargs, _ignored = msg
 
     try
@@ -157,9 +159,9 @@ function handle(::Val{MsgType.from_host_call_without_response}, socket, msg, msg
     end
 end
 
-function handle(::Val{MsgType.special_serialization_failure}, socket, msg, msg_id::MsgID)
+function handle(::Val{MsgType.special_serialization_failure}, serializer, msg, msg_id::MsgID)
     _serialize_msg(
-        socket,
+        serializer,
         MsgType.from_worker_call_failure,
         msg_id,
         msg
