@@ -171,7 +171,7 @@ end
 const src_path = RelocatableFolders.@path @__DIR__
 
 function _get_worker_cmd(exe=Base.julia_cmd()[1]; env, exeflags)
-    return addenv(`$exe $exeflags $(joinpath(src_path, "worker.jl"))`, Base.byteenv(env))
+    return addenv(`$exe --startup-file=no $exeflags $(joinpath(src_path, "worker.jl"))`, Base.byteenv(env))
 end
 
 
