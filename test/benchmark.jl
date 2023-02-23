@@ -7,10 +7,10 @@ import Distributed
 const TEST_BENCHMARK = true
 
 
-@testset "Benchmark" begin
+@testset "Benchmark: $W" for W in (m.InProcessWorker, m.Worker)
     
     
-    w = m.Worker()
+    w = W()
     @test m.isrunning(w) === true
     
     

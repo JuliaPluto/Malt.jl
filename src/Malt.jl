@@ -32,6 +32,24 @@ end
 
 unwrap_worker_result(result::WorkerResult) = result.should_throw ? throw(result.value) : result.value
 
+abstract type AbstractWorker end
+
+"""
+    Malt.InProcessWorker(mod::Module=Main)
+
+This implements the same functions as `Malt.Worker` but runs in the same
+process as the caller.
+"""
+mutable struct InProcessWorker <: AbstractWorker
+    host_module::Module
+    latest_request_task::Task
+    running::Bool
+
+    function InProcessWorker(mod=Main)
+        task = schedule(Task(() -> nothing))
+        new(mod, task, true)
+    end
+end
 
 """
     Malt.Worker()
@@ -45,7 +63,7 @@ julia> w = Malt.worker()
 Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 ```
 """
-mutable struct Worker
+mutable struct Worker <: AbstractWorker
     port::UInt16
     proc::Base.Process
 
@@ -68,7 +86,7 @@ mutable struct Worker
         # Connect
         socket = Sockets.connect(port)
         _buffer_writes(socket)
-        
+
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
@@ -93,7 +111,7 @@ function _receive_loop(worker::Worker)
                 @debug("HOST: io closed.")
                 break
             end
-           
+
             @debug "HOST: Waiting for message"
             msg_type = try
                 if eof(io)
@@ -113,7 +131,7 @@ function _receive_loop(worker::Worker)
             end
             # this next line can't fail
             msg_id = read(io, MsgID)
-            
+
             msg_data, success = try
                 deserialize(serializer), true
             catch err
@@ -150,7 +168,7 @@ function _receive_loop(worker::Worker)
                 sleep(3)
                 if isrunning(worker)
                     @error "Connection lost with worker, but the process is still running. Killing proces..." exception = (e, catch_backtrace())
-                    
+
                     kill(worker)
                 else
                     # This is a clean exit
@@ -293,12 +311,22 @@ function remotecall(f, w::Worker, args...; kwargs...)
         _new_call_msg(true, f, args, kwargs),
     )
 end
+function remotecall(f, w::InProcessWorker, args...; kwargs...)
+    w.latest_request_task = @async try
+        f(args...; kwargs...)
+    catch ex
+        ex
+    end
+end
 
 """
     Malt.remotecall_fetch(f, w::Worker, args...; kwargs...)
 
 Shorthand for `fetch(Malt.remotecall(…))`. Blocks and then returns the result of the remote call.
 """
+function remotecall_fetch(f, w::AbstractWorker, args...; kwargs...)
+    fetch(remotecall(f, w, args...; kwargs...))
+end
 function remotecall_fetch(f, w::Worker, args...; kwargs...)
     _send_receive(
         w,
@@ -307,12 +335,14 @@ function remotecall_fetch(f, w::Worker, args...; kwargs...)
     )
 end
 
-
 """
     Malt.remotecall_wait(f, w::Worker, args...; kwargs...)
 
 Shorthand for `wait(Malt.remotecall(…))`. Blocks and discards the resulting value.
 """
+function remotecall_wait(f, w::AbstractWorker, args...; kwargs...)
+    wait(remotecall(f, w, args...; kwargs...))
+end
 function remotecall_wait(f, w::Worker, args...; kwargs...)
     _send_receive(
         w,
@@ -320,7 +350,6 @@ function remotecall_wait(f, w::Worker, args...; kwargs...)
         _new_call_msg(false, f, args, kwargs)
     )
 end
-
 
 
 """
@@ -339,7 +368,10 @@ function remote_do(f, w::Worker, args...; kwargs...)
     )
     nothing
 end
-
+function remote_do(f, ::InProcessWorker, args...; kwargs...)
+    @async f(args...; kwargs...)
+    nothing
+end
 
 
 ## Eval variants
@@ -365,23 +397,23 @@ julia> Malt.remote_eval_fetch(w, :x)
 ```
 
 """
-remote_eval(m::Module, w::Worker, expr) = remotecall(Core.eval, w, m, expr)
+remote_eval(m::Module, w::AbstractWorker, expr) = remotecall(Core.eval, w, m, expr)
 
 
 """
 Shorthand for `fetch(Malt.remote_eval(…))`. Blocks and returns the resulting value.
 """
-remote_eval_fetch(m::Module, w::Worker, expr) = remotecall_fetch(Core.eval, w, m, expr)
+remote_eval_fetch(m::Module, w::AbstractWorker, expr) = remotecall_fetch(Core.eval, w, m, expr)
 
 
 """
 Shorthand for `wait(Malt.remote_eval(…))`. Blocks and discards the resulting value.
 """
-remote_eval_wait(m::Module, w::Worker, expr) = remotecall_wait(Core.eval, w, m, expr)
+remote_eval_wait(m::Module, w::AbstractWorker, expr) = remotecall_wait(Core.eval, w, m, expr)
 
 
 """
-    Malt.worker_channel(w::Worker, expr)
+    Malt.worker_channel(w::AbstractWorker, expr)
 
 Create a channel to communicate with worker `w`. `expr` must be an expression
 that evaluates to a Channel. `expr` should assign the Channel to a (global) variable
@@ -390,21 +422,24 @@ so the worker has a handle that can be used to send messages back to the manager
 function worker_channel(w::Worker, expr)
     RemoteChannel(w, expr)
 end
+function worker_channel(w::InProcessWorker, expr)
+    Core.eval(w.host_module, expr)
+end
 
 
 struct RemoteChannel{T} <: AbstractChannel{T}
     worker::Worker
     id::UInt64
-    
-    function RemoteChannel{T}(worker::Worker, expr) where T
-        
+
+    function RemoteChannel{T}(worker::Worker, expr) where {T}
+
         id = (worker.current_message_id += MsgID(1))::MsgID
         remote_eval_wait(Main, worker, quote
             Main._channel_cache[$id] = $expr
         end)
         new{T}(worker, id)
     end
-    
+
     RemoteChannel(w::Worker, expr) = RemoteChannel{Any}(w, expr)
 end
 
@@ -425,6 +460,7 @@ Base.wait(rc::RemoteChannel) = remote_eval_wait(Main, rc.worker, :(wait(Main._ch
 Check whether the worker process `w` is running.
 """
 isrunning(w::Worker)::Bool = Base.process_running(w.proc)
+isrunning(w::InProcessWorker) = w.running
 
 _assert_is_running(w::Worker) = isrunning(w) || throw(TerminatedWorkerException())
 
@@ -445,7 +481,10 @@ function stop(w::Worker)
         false
     end
 end
-
+function stop(w::InProcessWorker)
+    w.running = false
+    true
+end
 
 """
     Malt.kill(w::Worker)
@@ -455,8 +494,10 @@ Terminate the worker process `w` forcefully by sending a `SIGTERM` signal.
 This is not the recommended way to terminate the process. See `Malt.stop`.
 """ # https://youtu.be/dyIilW_eBjc
 kill(w::Worker) = Base.kill(w.proc)
+kill(::InProcessWorker) = nothing
 
 
+_wait_for_exit(::AbstractWorker; timeout_s::Real=20) = nothing
 function _wait_for_exit(w::Worker; timeout_s::Real=20)
     t0 = time()
     while isrunning(w)
@@ -482,7 +523,9 @@ function interrupt(w::Worker)
         Base.kill(w.proc, Base.SIGINT)
     end
 end
-
+function interrupt(w::InProcessWorker)
+    schedule(w.latest_request_task, InterruptException(); error=true)
+end
 
 
 
@@ -490,16 +533,16 @@ end
 # Based on `Base.task_done_hook`
 function _rethrow_to_repl(e::InterruptException; rethrow_regular::Bool=false)
     if isdefined(Base, :active_repl_backend) &&
-        isdefined(Base.active_repl_backend, :backend_task) &&
-        isdefined(Base.active_repl_backend, :in_eval) &&
-        Base.active_repl_backend.backend_task.state === :runnable &&
-        (isdefined(Base, :Workqueue) || isempty(Base.Workqueue)) &&
-        Base.active_repl_backend.in_eval
-        
+       isdefined(Base.active_repl_backend, :backend_task) &&
+       isdefined(Base.active_repl_backend, :in_eval) &&
+       Base.active_repl_backend.backend_task.state === :runnable &&
+       (isdefined(Base, :Workqueue) || isempty(Base.Workqueue)) &&
+       Base.active_repl_backend.in_eval
+
         @debug "HOST: Rethrowing interrupt to REPL"
         @async Base.schedule(Base.active_repl_backend.backend_task, e; error=true)
     elseif rethrow_regular
-        @debug "HOST: Don't know what to do with this interrupt, rethrowing" exception=(e, catch_backtrace())
+        @debug "HOST: Don't know what to do with this interrupt, rethrowing" exception = (e, catch_backtrace())
         rethrow(e)
     end
 end
