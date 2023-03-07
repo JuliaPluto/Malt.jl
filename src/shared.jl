@@ -32,16 +32,16 @@ function _discard_until_boundary(io::IO)
     readuntil(io, MSG_BOUNDARY)
 end
 
-function _serialize_msg(serializer::Serializer, msg_type::UInt8, msg_id::MsgID, msg_data::Any)
-    lock(serializer.io)
+function _serialize_msg(io::IO, msg_type::UInt8, msg_id::MsgID, msg_data::Any)
+    lock(io)
     try
-        write(serializer.io, msg_type)
-        write(serializer.io, msg_id)
-        serialize(serializer, msg_data)
-        write(serializer.io, MSG_BOUNDARY)
-        flush(serializer.io)
+        write(io, msg_type)
+        write(io, msg_id)
+        serialize(io, msg_data)
+        write(io, MSG_BOUNDARY)
+        flush(io)
     finally
-        unlock(serializer.io)
+        unlock(io)
     end
 
     return nothing

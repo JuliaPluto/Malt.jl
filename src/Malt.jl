@@ -6,7 +6,7 @@ these functions are not stable.
 module Malt
 
 # using Logging: Logging, @debug
-using Serialization: serialize, deserialize, Serializer
+using Serialization: serialize, deserialize
 using Sockets: Sockets
 
 using RelocatableFolders: RelocatableFolders
@@ -50,7 +50,6 @@ mutable struct Worker
     proc::Base.Process
 
     current_socket::Sockets.TCPSocket
-    serializer::Serializer
     # socket_lock::ReentrantLock
 
     current_message_id::MsgID
@@ -72,7 +71,7 @@ mutable struct Worker
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
-            new(port, proc, socket, Serializer(socket), MsgID(0), Dict{MsgID,Channel{WorkerResult}}())
+            new(port, proc, socket, MsgID(0), Dict{MsgID,Channel{WorkerResult}}())
         )
         atexit(() -> stop(w))
 
@@ -86,7 +85,6 @@ end
 
 function _receive_loop(worker::Worker)
     io = worker.current_socket
-    serializer = worker.serializer
     @async while true
         try
             if !isopen(io)
@@ -115,7 +113,7 @@ function _receive_loop(worker::Worker)
             msg_id = read(io, MsgID)
             
             msg_data, success = try
-                deserialize(serializer), true
+                deserialize(io), true
             catch err
                 err, false
             finally
@@ -227,7 +225,7 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
 
     @debug("HOST: sending message", msg_data)
 
-    _serialize_msg(worker.serializer, msg_type, msg_id, msg_data)
+    _serialize_msg(worker.current_socket, msg_type, msg_id, msg_data)
 
     return msg_id
 end
