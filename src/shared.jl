@@ -12,7 +12,7 @@ const MsgType = (
 
 const MsgID = UInt64
 
-const BUFFER_SIZE = 4 * 65536 # 4 * Base.SZ_UNBUFFERED_IO
+const BUFFER_SIZE = 65536 # Base.SZ_UNBUFFERED_IO
 # Future-compat version of Base.buffer_writes
 _buffer_writes(io) = @static if isdefined(Base, :buffer_writes) && hasmethod(Base.buffer_writes, (Base.LibuvStream, Int))
     Base.buffer_writes(io, BUFFER_SIZE)
