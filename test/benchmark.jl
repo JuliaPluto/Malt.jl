@@ -60,9 +60,7 @@ const TEST_BENCHMARK = true
         @info "Expr $i" ratio t1 t2 
         
         if TEST_BENCHMARK
-            # TODO: expr 3 has a higher tolerance, but we should fix this.
-            max_ratio = i == 3 ? 2.0 : 1.15
-            @test ratio < max_ratio
+            @test ratio < 1.2
         end
     end
     
