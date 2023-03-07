@@ -32,9 +32,7 @@ function main()
 end
 
 function serve(server::Sockets.TCPServer)
-    # FIXME: This `latest` task isn't a good hack.
-    # It only works if the main server is disciplined about the order of requests.
-    # That happens to be the case for Pluto, but it's not true in general.
+    # FIXME: This `latest` task no longer works
     latest = nothing
     while isopen(server)
         try
@@ -59,7 +57,7 @@ function serve(server::Sockets.TCPServer)
                 @debug "WORKER: Waiting for message"
                 msg_type = try
                     if eof(io)
-                        @debug("HOST: io closed.")
+                        @debug("WORKER: io closed.")
                         break
                     end
                     read(io, UInt8)
@@ -104,7 +102,7 @@ function serve(server::Sockets.TCPServer)
                     if e isa InterruptException
                         @debug("WORKER: Caught interrupt while handling message, ignoring...")
                     else
-                        @error("WORKER: Caught exception while handling message", exception = (e, backtrace()))
+                        @error("WORKER: Caught exception while handling message, ignoring...", exception = (e, backtrace()))
                     end
                     handle(Val(MsgType.special_serialization_failure), io, e, msg_id)
                 end
@@ -153,8 +151,7 @@ function handle(::Val{MsgType.from_host_call_without_response}, serializer, msg,
     try
         f(args...; kwargs...)
     catch e
-        @warn("WORKER: Got exception!", e)
-        @debug("WORKER: Got exception!", e)
+        @warn("WORKER: Got exception while running call without response", exception=(e, catch_backtrace()))
         # TODO: exception is ignored, is that what we want here?
     end
 end

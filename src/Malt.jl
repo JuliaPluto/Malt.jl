@@ -149,7 +149,7 @@ function _receive_loop(worker::Worker)
             elseif e isa Base.IOError && !isopen(io)
                 sleep(3)
                 if isrunning(worker)
-                    @error "Connection lost with worker, but the process is still running. Killing proces..." exception = (e, catch_backtrace())
+                    @error "HOST: Connection lost with worker, but the process is still running. Killing proces..." exception = (e, catch_backtrace())
                     
                     kill(worker)
                 else
@@ -157,7 +157,7 @@ function _receive_loop(worker::Worker)
                 end
                 break
             else
-                @error "Unknown error" exception = (e, catch_backtrace()) isopen(io)
+                @error "HOST: Unknown error" exception = (e, catch_backtrace()) isopen(io)
 
                 break
             end
@@ -243,7 +243,7 @@ function _wait_for_response(worker::Worker, msg_id::MsgID)
         delete!(worker.expected_replies, msg_id)
         return unwrap_worker_result(response)
     else
-        error("No response expected for message id $msg_id")
+        error("HOST: No response expected for message id $msg_id")
     end
 end
 
@@ -462,7 +462,7 @@ function _wait_for_exit(w::Worker; timeout_s::Real=20)
     while isrunning(w)
         sleep(0.01)
         if time() - t0 > timeout_s
-            error("Worker did not exit after $timeout_s seconds")
+            error("HOST: Worker did not exit after $timeout_s seconds")
         end
     end
 end
