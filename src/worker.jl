@@ -165,10 +165,7 @@ function handle(::Val{MsgType.special_serialization_failure}, serializer, msg, m
     )
 end
 
-
 const _channel_cache = Dict{UInt64, Channel}()
-
-
 
 if abspath(PROGRAM_FILE) == @__FILE__
     main()
