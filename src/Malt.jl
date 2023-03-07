@@ -46,10 +46,10 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 ```
 """
 mutable struct Worker
-    port::UInt16
+    port::Any
     proc::Base.Process
 
-    current_socket::Sockets.TCPSocket
+    current_socket::Any
     serializer::Serializer
     # socket_lock::ReentrantLock
 
@@ -63,8 +63,9 @@ mutable struct Worker
 
         # Block until reading the port number of the process (from its stdout)
         port_str = readline(proc)
-        port = parse(UInt16, port_str)
-
+        # port = parse(UInt16, port_str)
+        port = port_str
+        
         # Connect
         socket = Sockets.connect(port)
         _buffer_writes(socket)

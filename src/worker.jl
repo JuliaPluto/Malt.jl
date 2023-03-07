@@ -17,7 +17,11 @@ include("./shared.jl")
 function main()
     # Use the same port hint as Distributed
     port_hint = 9000 + (Sockets.getpid() % 1000)
-    port, server = Sockets.listenany(port_hint)
+    
+    # TODO lets do uuid
+    port = "worker-$(Sockets.getpid())-$(rand(1:1000000))"
+    
+    server = Sockets.listen(port)
 
     # Write port number to stdout to let main process know where to send requests
     @debug("WORKER: new port", port)
@@ -25,13 +29,13 @@ function main()
     flush(stdout)
 
     # Set network parameters, this is copied from Distributed
-    Sockets.nagle(server, false)
-    Sockets.quickack(server, true)
+    # Sockets.nagle(server, false)
+    # Sockets.quickack(server, true)
 
     serve(server)
 end
 
-function serve(server::Sockets.TCPServer)
+function serve(server::Any)
     while isopen(server)
         try
             # Wait for new request
@@ -40,8 +44,8 @@ function serve(server::Sockets.TCPServer)
             @debug("WORKER: New connection", io)
             
             # Set network parameters, this is copied from Distributed
-            Sockets.nagle(io, false)
-            Sockets.quickack(io, true)
+            # Sockets.nagle(io, false)
+            # Sockets.quickack(io, true)
             _buffer_writes(io)
 
             serializer = Serializer(io)
