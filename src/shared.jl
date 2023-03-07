@@ -2,7 +2,7 @@
 const MsgType = (
     from_host_call_with_response = UInt8(1),
     from_host_call_without_response = UInt8(2),
-    from_host_interrupt = UInt8(20),
+    from_host_fake_interrupt = UInt8(20),
     ####
     from_worker_call_result = UInt8(80),
     from_worker_call_failure = UInt8(81),

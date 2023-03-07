@@ -476,8 +476,11 @@ latest request (`remotecall*` or `remote_eval*`) that was sent to the worker.
 """
 function interrupt(w::Worker)
     if Sys.iswindows()
-        _assert_is_running(w)
-        _send_msg(w, MsgType.from_host_interrupt, (), false)
+        # TODO: not yet implemented
+        @warn "Malt.interrupt is not yet supported on Windows"
+        # _assert_is_running(w)
+        # _send_msg(w, MsgType.from_host_fake_interrupt, (), false)
+        nothing
     else
         Base.kill(w.proc, Base.SIGINT)
     end

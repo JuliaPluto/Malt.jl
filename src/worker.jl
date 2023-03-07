@@ -32,8 +32,6 @@ function main()
 end
 
 function serve(server::Sockets.TCPServer)
-    # FIXME: This `latest` task no longer works
-    latest = nothing
     while isopen(server)
         try
             # Wait for new request
@@ -49,7 +47,7 @@ function serve(server::Sockets.TCPServer)
             serializer = Serializer(io)
 
             # Handle request asynchronously
-            latest = @async while true
+            @async while true
                 if !isopen(io)
                     @debug("WORKER: io closed.")
                     break
@@ -90,14 +88,9 @@ function serve(server::Sockets.TCPServer)
                 end
                 
                 try
-                    if msg_type === MsgType.from_host_interrupt
-                        @debug("WORKER: Received interrupt message")
-                        interrupt(latest)
-                    else
-                        @debug("WORKER: Received message", msg_data)
-                        handle(Val(msg_type), serializer, msg_data, msg_id)
-                        @debug("WORKER: handled")
-                    end
+                    @debug("WORKER: Received message", msg_data)
+                    handle(Val(msg_type), serializer, msg_data, msg_id)
+                    @debug("WORKER: handled")
                 catch e
                     if e isa InterruptException
                         @debug("WORKER: Caught interrupt while handling message, ignoring...")
