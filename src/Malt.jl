@@ -32,7 +32,6 @@ end
 
 unwrap_worker_result(result::WorkerResult) = result.should_throw ? throw(result.value) : result.value
 
-
 """
     Malt.Worker()
 
@@ -46,12 +45,12 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 ```
 """
 mutable struct Worker
-    port::UInt16
+    dir
     proc::Base.Process
 
-    current_socket::Sockets.TCPSocket
-    # socket_lock::ReentrantLock
-
+    h2w::IO
+    w2h::IO
+  
     current_message_id::MsgID
     expected_replies::Dict{MsgID,Channel{WorkerResult}}
 
@@ -61,17 +60,20 @@ mutable struct Worker
         proc = open(cmd, "w+")
 
         # Block until reading the port number of the process (from its stdout)
-        port_str = readline(proc)
-        port = parse(UInt16, port_str)
+        dir = readline(proc)
+        h2w_path = joinpath(dir, "h2w")        
+        w2h_path = joinpath(dir, "w2h")        
 
-        # Connect
-        socket = Sockets.connect(port)
-        _buffer_writes(socket)
+        w2h = open(w2h_path, "r")
+        h2w = open(h2w_path, "w")
+        
+        _buffer_writes(h2w)
+        
         
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
-            new(port, proc, socket, MsgID(0), Dict{MsgID,Channel{WorkerResult}}())
+            new(dir, proc, h2w, w2h, MsgID(0), Dict{MsgID,Channel{WorkerResult}}())
         )
         atexit(() -> stop(w))
 
@@ -84,7 +86,7 @@ end
 
 
 function _receive_loop(worker::Worker)
-    io = worker.current_socket
+    io = worker.w2h
     @async while true
         try
             if !isopen(io)
@@ -225,7 +227,7 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
 
     @debug("HOST: sending message", msg_data)
 
-    _serialize_msg(worker.current_socket, msg_type, msg_id, msg_data)
+    _serialize_msg(worker.h2w, msg_type, msg_id, msg_data)
 
     return msg_id
 end

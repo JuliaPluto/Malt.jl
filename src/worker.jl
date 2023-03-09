@@ -15,98 +15,85 @@ include("./shared.jl")
 # Logging.global_logger(Logging.ConsoleLogger(stderr, Logging.Debug))
 
 function main()
-    # Use the same port hint as Distributed
-    port_hint = 9000 + (Sockets.getpid() % 1000)
-    port, server = Sockets.listenany(port_hint)
-
-    # Write port number to stdout to let main process know where to send requests
-    @debug("WORKER: new port", port)
-    println(stdout, port)
-    flush(stdout)
-
-    # Set network parameters, this is copied from Distributed
-    Sockets.nagle(server, false)
-    Sockets.quickack(server, true)
-
-    serve(server)
+ 
+    dir = mktempdir()
+     @debug("WORKER: Fifo dir: ", dir)
+    serve(dir)
 end
 
-function serve(server::Sockets.TCPServer)
-    while isopen(server)
-        try
-            # Wait for new request
-            @debug("WORKER: Waiting for new connection")
-            io = Sockets.accept(server)
-            @debug("WORKER: New connection", io)
-            
-            # Set network parameters, this is copied from Distributed
-            Sockets.nagle(io, false)
-            Sockets.quickack(io, true)
-            _buffer_writes(io)
+function serve(dir)
+    h2w_path = joinpath(dir, "h2w")        
+    w2h_path = joinpath(dir, "w2h")        
 
-            # Handle request asynchronously
-            @async while true
-                if !isopen(io)
-                    @debug("WORKER: io closed.")
-                    break
-                end
-                @debug "WORKER: Waiting for message"
-                msg_type = try
-                    if eof(io)
-                        @debug("WORKER: io closed.")
-                        break
-                    end
-                    read(io, UInt8)
-                catch e
-                    if e isa InterruptException
-                        @debug("WORKER: Caught interrupt while waiting for incoming data, ignoring...")
-                        continue # and go back to waiting for incoming data
-                    else
-                        @error("WORKER: Caught exception while waiting for incoming data, breaking", exception = (e, backtrace()))
-                        break
-                    end
-                end
-                # this next line can't fail
-                msg_id = read(io, MsgID)
-                
-                msg_data, success = try
-                    deserialize(io), true
-                catch err
-                    err, false
-                finally
-                    _discard_until_boundary(io)
-                end
-                
-                if !success
-                    if msg_type === MsgType.from_host_call_with_response
-                        msg_type = MsgType.special_serialization_failure
-                    else
-                        continue
-                    end
-                end
-                
-                try
-                    @debug("WORKER: Received message", msg_data)
-                    handle(Val(msg_type), io, msg_data, msg_id)
-                    @debug("WORKER: handled")
-                catch e
-                    if e isa InterruptException
-                        @debug("WORKER: Caught interrupt while handling message, ignoring...")
-                    else
-                        @error("WORKER: Caught exception while handling message, ignoring...", exception = (e, backtrace()))
-                    end
-                    handle(Val(MsgType.special_serialization_failure), io, e, msg_id)
-                end
+    # the order of everything is important...
+    # first create fifos
+    run(`mkfifo $h2w_path`)
+    run(`mkfifo $w2h_path`)
+
+    # then, publish information to host
+    println(stdout, dir)
+    flush(stdout)
+
+
+    # the ordering and modes need to be reversed on the host    
+    w2h = open(w2h_path, "w")
+    h2w = open(h2w_path, "r")
+    
+    _buffer_writes(w2h)
+    # Handle request asynchronously
+    @async while true
+        if !isopen(h2w)
+            @debug("WORKER: io closed.")
+            break
+        end
+        @debug "WORKER: Waiting for message"
+        msg_type = try
+            if eof(h2w)
+                @debug("WORKER: io closed.")
+                break
             end
+            read(h2w, UInt8)
         catch e
             if e isa InterruptException
-                @debug("WORKER: Caught interrupt while waiting for connection, ignoring...")
+                @debug("WORKER: Caught interrupt while waiting for incoming data, ignoring...")
+                continue # and go back to waiting for incoming data
             else
-                @error("WORKER: Caught exception while waiting for connection, ignoring...", exception = (e, backtrace()))
+                @error("WORKER: Caught exception while waiting for incoming data, breaking", exception = (e, backtrace()))
+                break
             end
         end
+        # this next line can't fail
+        msg_id = read(h2w, MsgID)
+        
+        msg_data, success = try
+            deserialize(h2w), true
+        catch err
+            err, false
+        finally
+            _discard_until_boundary(h2w)
+        end
+        
+        if !success
+            if msg_type === MsgType.from_host_call_with_response
+                msg_type = MsgType.special_serialization_failure
+            else
+                continue
+            end
+        end
+        
+        try
+            @debug("WORKER: Received message", msg_data)
+            handle(Val(msg_type), w2h, msg_data, msg_id)
+            @debug("WORKER: handled")
+        catch e
+            if e isa InterruptException
+                @debug("WORKER: Caught interrupt while handling message, ignoring...")
+            else
+                @error("WORKER: Caught exception while handling message, ignoring...", exception = (e, backtrace()))
+            end
+            handle(Val(MsgType.special_serialization_failure), w2h, e, msg_id)
+        end
     end
-    @debug("WORKER: Closed server socket. Bye!")
 end
 
 # Check if task is still running before throwing interrupt
