@@ -32,86 +32,76 @@ function main()
 end
 
 function serve(server::Sockets.TCPServer)
-    while isopen(server)
-        try
-            # Wait for new request
-            @debug("WORKER: Waiting for new connection")
-            io = Sockets.accept(server)
-            @debug("WORKER: New connection", io)
-            
-            # Set network parameters, this is copied from Distributed
-            Sockets.nagle(io, false)
-            Sockets.quickack(io, true)
-            _buffer_writes(io)
 
-            # Handle request asynchronously
+    # Wait for new request
+    @debug("WORKER: Waiting for new connection")
+    io = Sockets.accept(server)
+    @debug("WORKER: New connection", io)
 
-            # Here we use:
-            # `for _i in Iterators.countfrom(1)`
-            # instead of
-            # `while true`
-            # as a workaround for https://github.com/JuliaLang/julia/issues/37154
-            @async for _i in Iterators.countfrom(1)
-                if !isopen(io)
-                    @debug("WORKER: io closed.")
-                    break
-                end
-                @debug "WORKER: Waiting for message"
-                msg_type = try
-                    if eof(io)
-                        @debug("WORKER: io closed.")
-                        break
-                    end
-                    read(io, UInt8)
-                catch e
-                    if e isa InterruptException
-                        @debug("WORKER: Caught interrupt while waiting for incoming data, ignoring...")
-                        continue # and go back to waiting for incoming data
-                    else
-                        @error("WORKER: Caught exception while waiting for incoming data, breaking", exception = (e, backtrace()))
-                        break
-                    end
-                end
-                # this next line can't fail
-                msg_id = read(io, MsgID)
-                
-                msg_data, success = try
-                    deserialize(io), true
-                catch err
-                    err, false
-                finally
-                    _discard_until_boundary(io)
-                end
-                
-                if !success
-                    if msg_type === MsgType.from_host_call_with_response
-                        msg_type = MsgType.special_serialization_failure
-                    else
-                        continue
-                    end
-                end
-                
-                try
-                    @debug("WORKER: Received message", msg_data)
-                    handle(Val(msg_type), io, msg_data, msg_id)
-                    @debug("WORKER: handled")
-                catch e
-                    if e isa InterruptException
-                        @debug("WORKER: Caught interrupt while handling message, ignoring...")
-                    else
-                        @error("WORKER: Caught exception while handling message, ignoring...", exception = (e, backtrace()))
-                    end
-                    handle(Val(MsgType.special_serialization_failure), io, e, msg_id)
-                end
+    # Set network parameters, this is copied from Distributed
+    Sockets.nagle(io, false)
+    Sockets.quickack(io, true)
+    _buffer_writes(io)
+
+    # Here we use:
+    # `for _i in Iterators.countfrom(1)`
+    # instead of
+    # `while true`
+    # as a workaround for https://github.com/JuliaLang/julia/issues/37154
+    for _i in Iterators.countfrom(1)
+        if !isopen(io)
+            @debug("WORKER: io closed.")
+            break
+        end
+        @debug "WORKER: Waiting for message"
+        msg_type = try
+            if eof(io)
+                @debug("WORKER: io closed.")
+                break
             end
+            read(io, UInt8)
         catch e
             if e isa InterruptException
-                @debug("WORKER: Caught interrupt while waiting for connection, ignoring...")
+                @debug("WORKER: Caught interrupt while waiting for incoming data, ignoring...")
+                continue # and go back to waiting for incoming data
             else
-                @error("WORKER: Caught exception while waiting for connection, ignoring...", exception = (e, backtrace()))
+                @error("WORKER: Caught exception while waiting for incoming data, breaking", exception = (e, backtrace()))
+                break
             end
         end
+        # this next line can't fail
+        msg_id = read(io, MsgID)
+        
+        msg_data, success = try
+            deserialize(io), true
+        catch err
+            err, false
+        finally
+            _discard_until_boundary(io)
+        end
+        
+        if !success
+            if msg_type === MsgType.from_host_call_with_response
+                msg_type = MsgType.special_serialization_failure
+            else
+                continue
+            end
+        end
+        
+        try
+            @debug("WORKER: Received message", msg_data)
+            handle(Val(msg_type), io, msg_data, msg_id)
+            @debug("WORKER: handled")
+        catch e
+            if e isa InterruptException
+                @debug("WORKER: Caught interrupt while handling message, ignoring...")
+            else
+                @error("WORKER: Caught exception while handling message, ignoring...", exception = (e, backtrace()))
+            end
+            handle(Val(MsgType.special_serialization_failure), io, e, msg_id)
+        end
     end
+
     @debug("WORKER: Closed server socket. Bye!")
 end
 
