@@ -45,7 +45,13 @@ function serve(server::Sockets.TCPServer)
             _buffer_writes(io)
 
             # Handle request asynchronously
-            @async while true
+
+            # Here we use:
+            # `for _i in Iterators.countfrom(1)`
+            # instead of
+            # `while true`
+            # as a workaround for https://github.com/JuliaLang/julia/issues/37154
+            @async for _i in Iterators.countfrom(1)
                 if !isopen(io)
                     @debug("WORKER: io closed.")
                     break
