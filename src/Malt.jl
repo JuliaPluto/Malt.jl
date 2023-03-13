@@ -85,7 +85,12 @@ end
 
 function _receive_loop(worker::Worker)
     io = worker.current_socket
-    @async while true
+    # Here we use:
+    # `for _i in Iterators.countfrom(1)`
+    # instead of
+    # `while true`
+    # as a workaround for https://github.com/JuliaLang/julia/issues/37154
+    @async for _i in Iterators.countfrom(1)
         try
             if !isopen(io)
                 @debug("HOST: io closed.")

@@ -43,7 +43,12 @@ function serve(server::Sockets.TCPServer)
     Sockets.quickack(io, true)
     _buffer_writes(io)
 
-    while true
+    # Here we use:
+    # `for _i in Iterators.countfrom(1)`
+    # instead of
+    # `while true`
+    # as a workaround for https://github.com/JuliaLang/julia/issues/37154
+    for _i in Iterators.countfrom(1)
         if !isopen(io)
             @debug("WORKER: io closed.")
             break
