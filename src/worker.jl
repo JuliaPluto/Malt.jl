@@ -1,5 +1,5 @@
 using Logging: Logging, @debug
-using Serialization: serialize, deserialize, Serializer
+using Serialization: serialize, deserialize
 using Sockets: Sockets
 
 ## Allow catching InterruptExceptions
@@ -32,91 +32,76 @@ function main()
 end
 
 function serve(server::Sockets.TCPServer)
-    # FIXME: This `latest` task isn't a good hack.
-    # It only works if the main server is disciplined about the order of requests.
-    # That happens to be the case for Pluto, but it's not true in general.
-    latest = nothing
-    while isopen(server)
-        try
-            # Wait for new request
-            @debug("WORKER: Waiting for new connection")
-            io = Sockets.accept(server)
-            @debug("WORKER: New connection", io)
-            
-            # Set network parameters, this is copied from Distributed
-            Sockets.nagle(io, false)
-            Sockets.quickack(io, true)
-            _buffer_writes(io)
 
-            serializer = Serializer(io)
+    # Wait for new request
+    @debug("WORKER: Waiting for new connection")
+    io = Sockets.accept(server)
+    @debug("WORKER: New connection", io)
 
-            # Handle request asynchronously
-            latest = @async while true
-                if !isopen(io)
-                    @debug("WORKER: io closed.")
-                    break
-                end
-                @debug "WORKER: Waiting for message"
-                msg_type = try
-                    if eof(io)
-                        @debug("HOST: io closed.")
-                        break
-                    end
-                    read(io, UInt8)
-                catch e
-                    if e isa InterruptException
-                        @debug("WORKER: Caught interrupt while waiting for incoming data, ignoring...")
-                        continue # and go back to waiting for incoming data
-                    else
-                        @error("WORKER: Caught exception while waiting for incoming data, breaking", exception = (e, backtrace()))
-                        break
-                    end
-                end
-                # this next line can't fail
-                msg_id = read(io, MsgID)
-                
-                msg_data, success = try
-                    deserialize(serializer), true
-                catch err
-                    err, false
-                finally
-                    _discard_until_boundary(io)
-                end
-                
-                if !success
-                    if msg_type === MsgType.from_host_call_with_response
-                        msg_type = MsgType.special_serialization_failure
-                    else
-                        continue
-                    end
-                end
-                
-                try
-                    if msg_type === MsgType.from_host_interrupt
-                        @debug("WORKER: Received interrupt message")
-                        interrupt(latest)
-                    else
-                        @debug("WORKER: Received message", msg_data)
-                        handle(Val(msg_type), serializer, msg_data, msg_id)
-                        @debug("WORKER: handled")
-                    end
-                catch e
-                    if e isa InterruptException
-                        @debug("WORKER: Caught interrupt while handling message, ignoring...")
-                    else
-                        @error("WORKER: Caught exception while handling message", exception = (e, backtrace()))
-                    end
-                    handle(Val(MsgType.special_serialization_failure), io, e, msg_id)
-                end
+    # Set network parameters, this is copied from Distributed
+    Sockets.nagle(io, false)
+    Sockets.quickack(io, true)
+    _buffer_writes(io)
+
+    # Here we use:
+    # `for _i in Iterators.countfrom(1)`
+    # instead of
+    # `while true`
+    # as a workaround for https://github.com/JuliaLang/julia/issues/37154
+    for _i in Iterators.countfrom(1)
+        if !isopen(io)
+            @debug("WORKER: io closed.")
+            break
+        end
+        @debug "WORKER: Waiting for message"
+        msg_type = try
+            if eof(io)
+                @debug("WORKER: io closed.")
+                break
             end
+            read(io, UInt8)
         catch e
             if e isa InterruptException
-                @debug("WORKER: Caught interrupt while waiting for connection, ignoring...")
+                @debug("WORKER: Caught interrupt while waiting for incoming data, ignoring...")
+                continue # and go back to waiting for incoming data
             else
-                @error("WORKER: Caught exception while waiting for connection, ignoring...", exception = (e, backtrace()))
+                @error("WORKER: Caught exception while waiting for incoming data, breaking", exception = (e, backtrace()))
+                break
             end
         end
+        # this next line can't fail
+        msg_id = read(io, MsgID)
+        
+        msg_data, success = try
+            deserialize(io), true
+        catch err
+            err, false
+        finally
+            _discard_until_boundary(io)
+        end
+        
+        if !success
+            if msg_type === MsgType.from_host_call_with_response
+                msg_type = MsgType.special_serialization_failure
+            else
+                continue
+            end
+        end
+        
+        try
+            @debug("WORKER: Received message", msg_data)
+            handle(Val(msg_type), io, msg_data, msg_id)
+            @debug("WORKER: handled")
+        catch e
+            if e isa InterruptException
+                @debug("WORKER: Caught interrupt while handling message, ignoring...")
+            else
+                @error("WORKER: Caught exception while handling message, ignoring...", exception = (e, backtrace()))
+            end
+            handle(Val(MsgType.special_serialization_failure), io, e, msg_id)
+        end
     end
+
     @debug("WORKER: Closed server socket. Bye!")
 end
 
@@ -125,7 +110,7 @@ interrupt(t::Task) = istaskdone(t) || Base.schedule(t, InterruptException(); err
 interrupt(::Nothing) = nothing
 
 
-function handle(::Val{MsgType.from_host_call_with_response}, serializer, msg, msg_id::MsgID)
+function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id::MsgID)
     f, args, kwargs, respond_with_nothing = msg
 
     success, result = try
@@ -139,7 +124,7 @@ function handle(::Val{MsgType.from_host_call_with_response}, serializer, msg, ms
     end
 
     _serialize_msg(
-        serializer,
+        socket,
         success ? MsgType.from_worker_call_result : MsgType.from_worker_call_failure,
         msg_id,
         result
@@ -147,31 +132,27 @@ function handle(::Val{MsgType.from_host_call_with_response}, serializer, msg, ms
 end
 
 
-function handle(::Val{MsgType.from_host_call_without_response}, serializer, msg, msg_id::MsgID)
+function handle(::Val{MsgType.from_host_call_without_response}, socket, msg, msg_id::MsgID)
     f, args, kwargs, _ignored = msg
 
     try
         f(args...; kwargs...)
     catch e
-        @warn("WORKER: Got exception!", e)
-        @debug("WORKER: Got exception!", e)
+        @warn("WORKER: Got exception while running call without response", exception=(e, catch_backtrace()))
         # TODO: exception is ignored, is that what we want here?
     end
 end
 
-function handle(::Val{MsgType.special_serialization_failure}, serializer, msg, msg_id::MsgID)
+function handle(::Val{MsgType.special_serialization_failure}, socket, msg, msg_id::MsgID)
     _serialize_msg(
-        serializer,
+        socket,
         MsgType.from_worker_call_failure,
         msg_id,
         msg
     )
 end
 
-
 const _channel_cache = Dict{UInt64, Channel}()
-
-
 
 if abspath(PROGRAM_FILE) == @__FILE__
     main()

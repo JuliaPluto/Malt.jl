@@ -29,8 +29,8 @@ from_host_call_without_response
 (f, args, kwargs, this_value_is_ignored::Bool)
 
 
-from_host_interrupt
-
+from_host_fake_interrupt
+# (this is not yet implemented)
 ()
 
 

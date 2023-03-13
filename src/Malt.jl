@@ -6,7 +6,7 @@ these functions are not stable.
 module Malt
 
 # using Logging: Logging, @debug
-using Serialization: serialize, deserialize, Serializer
+using Serialization: serialize, deserialize
 using Sockets: Sockets
 
 using RelocatableFolders: RelocatableFolders
@@ -68,7 +68,6 @@ mutable struct Worker <: AbstractWorker
     proc::Base.Process
 
     current_socket::Sockets.TCPSocket
-    serializer::Serializer
     # socket_lock::ReentrantLock
 
     current_message_id::MsgID
@@ -90,7 +89,7 @@ mutable struct Worker <: AbstractWorker
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
-            new(port, proc, socket, Serializer(socket), MsgID(0), Dict{MsgID,Channel{WorkerResult}}())
+            new(port, proc, socket, MsgID(0), Dict{MsgID,Channel{WorkerResult}}())
         )
         atexit(() -> stop(w))
 
@@ -104,8 +103,12 @@ end
 
 function _receive_loop(worker::Worker)
     io = worker.current_socket
-    serializer = worker.serializer
-    @async while true
+    # Here we use:
+    # `for _i in Iterators.countfrom(1)`
+    # instead of
+    # `while true`
+    # as a workaround for https://github.com/JuliaLang/julia/issues/37154
+    @async for _i in Iterators.countfrom(1)
         try
             if !isopen(io)
                 @debug("HOST: io closed.")
@@ -133,7 +136,7 @@ function _receive_loop(worker::Worker)
             msg_id = read(io, MsgID)
 
             msg_data, success = try
-                deserialize(serializer), true
+                deserialize(io), true
             catch err
                 err, false
             finally
@@ -167,15 +170,14 @@ function _receive_loop(worker::Worker)
             elseif e isa Base.IOError && !isopen(io)
                 sleep(3)
                 if isrunning(worker)
-                    @error "Connection lost with worker, but the process is still running. Killing proces..." exception = (e, catch_backtrace())
-
+                    @error "HOST: Connection lost with worker, but the process is still running. Killing proces..." exception = (e, catch_backtrace())
                     kill(worker)
                 else
                     # This is a clean exit
                 end
                 break
             else
-                @error "Unknown error" exception = (e, catch_backtrace()) isopen(io)
+                @error "HOST: Unknown error" exception = (e, catch_backtrace()) isopen(io)
 
                 break
             end
@@ -245,7 +247,7 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
 
     @debug("HOST: sending message", msg_data)
 
-    _serialize_msg(worker.serializer, msg_type, msg_id, msg_data)
+    _serialize_msg(worker.current_socket, msg_type, msg_id, msg_data)
 
     return msg_id
 end
@@ -261,7 +263,7 @@ function _wait_for_response(worker::Worker, msg_id::MsgID)
         delete!(worker.expected_replies, msg_id)
         return unwrap_worker_result(response)
     else
-        error("No response expected for message id $msg_id")
+        error("HOST: No response expected for message id $msg_id")
     end
 end
 
@@ -503,7 +505,7 @@ function _wait_for_exit(w::Worker; timeout_s::Real=20)
     while isrunning(w)
         sleep(0.01)
         if time() - t0 > timeout_s
-            error("Worker did not exit after $timeout_s seconds")
+            error("HOST: Worker did not exit after $timeout_s seconds")
         end
     end
 end
@@ -517,8 +519,11 @@ latest request (`remotecall*` or `remote_eval*`) that was sent to the worker.
 """
 function interrupt(w::Worker)
     if Sys.iswindows()
-        _assert_is_running(w)
-        _send_msg(w, MsgType.from_host_interrupt, (), false)
+        # TODO: not yet implemented
+        @warn "Malt.interrupt is not yet supported on Windows"
+        # _assert_is_running(w)
+        # _send_msg(w, MsgType.from_host_fake_interrupt, (), false)
+        nothing
     else
         Base.kill(w.proc, Base.SIGINT)
     end

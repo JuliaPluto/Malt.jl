@@ -2,7 +2,7 @@
 const MsgType = (
     from_host_call_with_response = UInt8(1),
     from_host_call_without_response = UInt8(2),
-    from_host_interrupt = UInt8(20),
+    from_host_fake_interrupt = UInt8(20),
     ####
     from_worker_call_result = UInt8(80),
     from_worker_call_failure = UInt8(81),
@@ -12,7 +12,7 @@ const MsgType = (
 
 const MsgID = UInt64
 
-const BUFFER_SIZE = 4 * 65536 # 4 * Base.SZ_UNBUFFERED_IO
+const BUFFER_SIZE = 65536 # Base.SZ_UNBUFFERED_IO
 # Future-compat version of Base.buffer_writes
 _buffer_writes(io) = @static if isdefined(Base, :buffer_writes) && hasmethod(Base.buffer_writes, (Base.LibuvStream, Int))
     Base.buffer_writes(io, BUFFER_SIZE)
@@ -32,16 +32,16 @@ function _discard_until_boundary(io::IO)
     readuntil(io, MSG_BOUNDARY)
 end
 
-function _serialize_msg(serializer::Serializer, msg_type::UInt8, msg_id::MsgID, msg_data::Any)
-    lock(serializer.io)
+function _serialize_msg(io::IO, msg_type::UInt8, msg_id::MsgID, msg_data::Any)
+    lock(io)
     try
-        write(serializer.io, msg_type)
-        write(serializer.io, msg_id)
-        serialize(serializer, msg_data)
-        write(serializer.io, MSG_BOUNDARY)
-        flush(serializer.io)
+        write(io, msg_type)
+        write(io, msg_id)
+        serialize(io, msg_data)
+        write(io, MSG_BOUNDARY)
+        flush(io)
     finally
-        unlock(serializer.io)
+        unlock(io)
     end
 
     return nothing

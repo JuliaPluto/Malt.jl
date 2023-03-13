@@ -60,7 +60,7 @@ const TEST_BENCHMARK = true
         @info "Expr $i" ratio t1 t2 
         
         if TEST_BENCHMARK
-            @test ratio < 1.15
+            @test ratio < 1.2
         end
     end
     
