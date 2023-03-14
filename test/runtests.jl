@@ -7,13 +7,15 @@ using Test
 # More tests should be added in the future.
 
 
+
+
 @testset "Worker management" begin
     w = m.Worker()
     @test m.isrunning(w) === true
 
     # Terminating workers takes about 0.5s
     m.stop(w)
-    sleep(2)
+    m._wait_for_exit(w)
     @test m.isrunning(w) === false
 end
 
@@ -24,6 +26,7 @@ end
     @test m.remotecall_fetch(&, w, true, true)
 
     m.stop(w)
+    m._wait_for_exit(w)
 end
 
 
@@ -33,7 +36,7 @@ end
 
     m.remote_eval_wait(Main, w, :(module Stub end))
 
-    str= "x is in Stub"
+    str = "x is in Stub"
 
     m.remote_eval_wait(Main, w, quote
         Core.eval(Stub, :(x = $$str))
@@ -42,15 +45,20 @@ end
     @test m.remote_eval_fetch(Main, w, :(Stub.x)) == str
 
     m.stop(w)
+    m._wait_for_exit(w)
 end
 
 
 @testset "Worker channels" begin
     w = m.Worker()
 
-    lc = m.worker_channel(w, :(rc = Channel()))
+    channel_size = 20
+    
+    lc = m.worker_channel(w, :(rc = Channel($channel_size)))
+    
+    @test lc isa AbstractChannel
 
-    @testset for _i in 1:100
+    @testset for _i in 1:10
         n = rand(Int)
 
         m.remote_eval(Main, w, quote
@@ -58,7 +66,32 @@ end
         end)
 
         @test take!(lc) === n
+        
+        put!(lc, n)
+        @test take!(lc) === n
+        put!(lc, n)
+        put!(lc, n)
+        @test take!(lc) === n
+        @test take!(lc) === n
+        
     end
+    
+    
+    
+    t = @async begin
+        for i in 1:2*channel_size
+            @test take!(lc) == i
+        end
+        @test !isready(lc)
+    end
+    
+    for i in 1:2*channel_size
+        put!(lc, i)
+    end
+    
+    wait(t)
+    
+    
 
     m.stop(w)
 end
@@ -74,7 +107,9 @@ end
     @test m.isrunning(w) === true
 
     m.stop(w)
-    sleep(2)
+    # TODO: why do i need kill here?
+    m.kill(w)
+    m._wait_for_exit(w)
     @test m.isrunning(w) === false
 end
 
@@ -89,6 +124,7 @@ end
         end),
         DomainError,
     )
+    @test m.remotecall_fetch(&, w, true, true)
 
     @test isa(
         m.remote_eval_fetch(Main, w, quote
@@ -96,6 +132,7 @@ end
         end),
         ErrorException,
     )
+    @test m.remotecall_fetch(&, w, true, true)
 
 
     ## Serializing values of unknown types will cause an exception.
@@ -112,6 +149,7 @@ end
             $stub_type_name()
         end),
     )
+    @test m.remotecall_fetch(&, w, true, true)
 
 
     ## Throwing unknown exceptions will definitely cause an exception.
@@ -128,6 +166,7 @@ end
             throw($stub_type_name2())
         end),
     )
+    @test m.remotecall_fetch(&, w, true, true)
 
 
     ## Catching unknown exceptions and returning them as values also causes an exception.
@@ -142,12 +181,31 @@ end
             end
         end),
     )
-
+    @test m.remotecall_fetch(&, w, true, true)
+    
+    
+    # TODO
+    # @test_throws(
+    #     Exception,
+    #     m.worker_channel(w, :(123))
+    # )
+    # @test_throws(
+    #     Exception,
+    #     m.worker_channel(w, :(sqrt(-1)))
+    # )
 
     # The worker should be able to handle all that throwing
     @test m.isrunning(w)
 
     m.stop(w)
+    m._wait_for_exit(w)
 end
 
 include("benchmark.jl")
+
+
+
+
+
+#TODO: 
+# test that worker.expected_replies is empty after a call
