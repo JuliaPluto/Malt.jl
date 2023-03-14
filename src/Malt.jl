@@ -67,15 +67,12 @@ mutable struct Worker
         # Connect
         socket = Sockets.connect(port)
         _buffer_writes(socket)
-        
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
-        w = finalizer(w -> @async(kill(w)), new(port, proc))
-        atexit(() -> kill(w))
-        w = finalizer(w -> @async(stop(w)),
+        w = finalizer(terminate,
             new(port, proc, socket, MsgID(0), Dict{MsgID,Channel{WorkerResult}}())
         )
-        atexit(() -> stop(w))
+        atexit(() -> terminate(w))
 
         _receive_loop(w)
 
@@ -460,6 +457,30 @@ This is not the recommended way to terminate the process. See `Malt.stop`.
 """ # https://youtu.be/dyIilW_eBjc
 kill(w::Worker) = Base.kill(w.proc)
 
+"""
+    Malt.terminate(w::Worker; exit_timeout::Int=1, term_timeout::Int=1)::Nothing
+
+Terminates the worker first by calling `Malt.stop()`, then by gradually trying to kill
+the underlying process using `SIGTERM`, then `SIGKILL`.
+"""
+function terminate(w::Worker; exit_timeout=1, term_timeout=1)
+    if !stop(w)
+        @async begin
+            sleep(exit_timeout)
+            if !process_exited(w.proc)
+                @warn("HOST: Stop failed, sending SIGTERM")
+                Base.kill(w.proc, Base.SIGTERM)
+
+                sleep(term_timeout)
+                if !process_exited(w.proc)
+                    @warn("HOST: Worker ignored SIGTERM, sending SIGKILL")
+                    Base.kill(w.proc, Base.SIGKILL)
+                end
+            end
+        end
+    end
+    nothing
+end
 
 function _wait_for_exit(w::Worker; timeout_s::Real=20)
     t0 = time()
