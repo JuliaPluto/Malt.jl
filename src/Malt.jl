@@ -170,7 +170,7 @@ function _receive_loop(worker::Worker)
             elseif e isa Base.IOError && !isopen(io)
                 sleep(3)
                 if isrunning(worker)
-                    @error "HOST: Connection lost with worker, but the process is still running. Killing proces..." exception = (e, catch_backtrace())
+                    @error "HOST: Connection lost with worker, but the process is still running. Killing process..." exception = (e, catch_backtrace())
                     kill(worker)
                 else
                     # This is a clean exit
