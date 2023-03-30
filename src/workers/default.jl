@@ -46,6 +46,7 @@ mutable struct Worker <: AbstractWorker
         return w
     end
 end
+getpid(w::Worker) = getpid(w.proc)
 
 function _receive_loop(worker::Worker)
     io = worker.current_socket
