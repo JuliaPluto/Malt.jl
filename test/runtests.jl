@@ -95,7 +95,6 @@ using Test
         m.stop(w)
     end
 
-    @info "222"
     @testset "Signals" begin
         w = W()
 
@@ -106,18 +105,13 @@ using Test
         m.interrupt(w)
         @test m.isrunning(w) === true
 
-        @info "x"
         m.stop(w)
         # TODO: why do i need kill here?
-        @info "y"
-        m.kill(w; signum=Base.SIGKILL)
-        @info "z"
+        m.kill(w)
         m._wait_for_exit(w)
-        @info "w"
         @test m.isrunning(w) === false
     end
 
-    @info "4"
     @testset "Regular Exceptions" begin
         w = W()
 
@@ -205,14 +199,11 @@ end
     # The worker should be able to handle all that throwing
     @test m.isrunning(w)
 
-    @info "asdf"
-
     m.stop(w)
     m._wait_for_exit(w)
 end
 
 include("nesting.jl")
-
 include("benchmark.jl")
 
 
