@@ -521,7 +521,7 @@ end
 
 _wait_for_exit(::AbstractWorker; timeout_s::Real=20.0) = nothing
 function _wait_for_exit(w::Worker; timeout_s::Real=20.0)
-    if !poll(() -> !isrunning(w); timeout_s)
+    if !_poll(() -> !isrunning(w); timeout_s)
         error("HOST: Worker did not exit after $timeout_s seconds")
     end
 end
