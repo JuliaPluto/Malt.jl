@@ -171,7 +171,7 @@ function _receive_loop(worker::Worker)
                 sleep(3)
                 if isrunning(worker)
                     @error "HOST: Connection lost with worker, but the process is still running. Killing process..." exception = (e, catch_backtrace())
-                    kill(worker)
+                    kill(worker, Base.SIGKILL)
                 else
                     # This is a clean exit
                 end
@@ -468,16 +468,25 @@ _assert_is_running(w::Worker) = isrunning(w) || throw(TerminatedWorkerException(
 
 
 """
-    Malt.stop(w::Worker)::Bool
+    Malt.stop(w::Worker; exit_timeout::Real=15.0, term_timeout::Real=15.0)::Bool
 
-Try to terminate the worker process `w` using `Base.exit`.
+Terminate the worker process `w` in the nicest possible way. We first try using `Base.exit`, then SIGTERM, then SIGKILL. Waits for the worker process to be terminated.
 
-If `w` is still alive, and a termination message is sent, `stop` returns true.
+If `w` is still alive, and now terinated, `stop` returns true.
 If `w` is already dead, `stop` returns `false`.
+If `w` failed to terminate, throw an exception.
 """
-function stop(w::Worker)
+function stop(w::Worker; exit_timeout::Real=15.0, term_timeout::Real=15.0)
+    ir = () -> !isrunning(w)
     if isrunning(w)
         remote_do(Base.exit, w)
+        if !_poll(ir; timeout_s=exit_timeout)
+            kill(w, Base.SIGTERM)
+            if !_poll(ir; timeout_s=term_timeout)
+                kill(w, Base.SIGKILL)
+                _wait_for_exit(w)
+            end
+        end
         true
     else
         false
@@ -489,24 +498,31 @@ function stop(w::InProcessWorker)
 end
 
 """
-    Malt.kill(w::Worker)
+    kill(w::Malt.Worker, signum=Base.SIGTERM)
 
-Terminate the worker process `w` forcefully by sending a `SIGTERM` signal.
+Terminate the worker process `w` forcefully by sending a `SIGTERM` signal (unless otherwise specified).
 
 This is not the recommended way to terminate the process. See `Malt.stop`.
 """ # https://youtu.be/dyIilW_eBjc
-kill(w::Worker) = Base.kill(w.proc)
-kill(::InProcessWorker) = nothing
+Base.kill(w::Worker, signum=Base.SIGTERM) = Base.kill(w.proc, signum)
+Base.kill(::InProcessWorker, signum=Base.SIGTERM) = nothing
 
 
-_wait_for_exit(::AbstractWorker; timeout_s::Real=20) = nothing
-function _wait_for_exit(w::Worker; timeout_s::Real=20)
-    t0 = time()
-    while isrunning(w)
-        sleep(0.01)
-        if time() - t0 > timeout_s
-            error("HOST: Worker did not exit after $timeout_s seconds")
+function _poll(f::Function; interval::Real=0.01, timeout_s::Real=Inf64)
+    tstart = time()
+    while true
+        f() && return true
+        if time() - tstart >= timeout_s
+            return false
         end
+        sleep(interval)
+    end
+end
+
+_wait_for_exit(::AbstractWorker; timeout_s::Real=20.0) = nothing
+function _wait_for_exit(w::Worker; timeout_s::Real=20.0)
+    if !_poll(() -> !isrunning(w); timeout_s)
+        error("HOST: Worker did not exit after $timeout_s seconds")
     end
 end
 
