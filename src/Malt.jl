@@ -171,7 +171,7 @@ function _receive_loop(worker::Worker)
                 sleep(3)
                 if isrunning(worker)
                     @error "HOST: Connection lost with worker, but the process is still running. Killing process..." exception = (e, catch_backtrace())
-                    kill(worker; signum=Base.SIGKILL)
+                    kill(worker, Base.SIGKILL)
                 else
                     # This is a clean exit
                 end
@@ -481,9 +481,9 @@ function stop(w::Worker)
     if isrunning(w)
         remote_do(Base.exit, w)
         if !_poll(ir; timeout_s=3.0)
-            kill(w; signum=Base.SIGTERM)
+            kill(w, Base.SIGTERM)
             if !_poll(ir; timeout_s=6.0)
-                kill(w; signum=Base.SIGKILL)
+                kill(w, Base.SIGKILL)
                 _wait_for_exit(w)
             end
         end
@@ -498,14 +498,14 @@ function stop(w::InProcessWorker)
 end
 
 """
-    Malt.kill(w::Worker; signum=Base.SIGTERM)
+    kill(w::Malt.Worker, signum=Base.SIGTERM)
 
 Terminate the worker process `w` forcefully by sending a `SIGTERM` signal (unless otherwise specified).
 
 This is not the recommended way to terminate the process. See `Malt.stop`.
 """ # https://youtu.be/dyIilW_eBjc
-kill(w::Worker; signum=Base.SIGTERM) = Base.kill(w.proc, signum)
-kill(::InProcessWorker; signum=Base.SIGTERM) = nothing
+Base.kill(w::Worker, signum=Base.SIGTERM) = Base.kill(w.proc, signum)
+Base.kill(::InProcessWorker, signum=Base.SIGTERM) = nothing
 
 
 function _poll(f::Function; interval::Real=0.01, timeout_s::Real=Inf64)
