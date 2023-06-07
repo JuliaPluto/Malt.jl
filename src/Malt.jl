@@ -34,6 +34,8 @@ unwrap_worker_result(result::WorkerResult) = result.should_throw ? throw(result.
 
 abstract type AbstractWorker end
 
+include("DistributedStdlibWorker.jl")
+
 """
     Malt.InProcessWorker(mod::Module=Main)
 
