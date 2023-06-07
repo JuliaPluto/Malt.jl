@@ -12,8 +12,9 @@ This implements the same functions as `Malt.Worker` but it uses the Distributed 
 """
 mutable struct DistributedStdlibWorker <: AbstractWorker
     pid::Int64
+    isrunning::Bool
 
-    function Worker(; env=String[], exeflags=[])
+    function DistributedStdlibWorker(; env=String[], exeflags=[])
         # Spawn process
         pid = Distributed.remotecall_eval(Main, 1, quote
             $(Distributed_expr).addprocs(1; exeflags=$(exeflags), env=$(env)) |> first
@@ -23,7 +24,7 @@ mutable struct DistributedStdlibWorker <: AbstractWorker
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
-            new(p)
+            new(pid, true)
         )
         atexit(() -> stop(w))
 
@@ -56,10 +57,17 @@ function worker_channel(w::DistributedStdlibWorker, expr)
     end)
 end
 
-isrunning(w::DistributedStdlibWorker) = TODO
+isrunning(w::DistributedStdlibWorker) = w.isrunning
 
+function stop(w::DistributedStdlibWorker)
+    w.isrunning = false
+    Distributed.remotecall_eval(Main, 1, quote
+        $(Distributed_expr).rmprocs($(w.pid)) |> wait
+    end)
+    nothing
+end
 
-Base.kill(w::DistributedStdlibWorker, signum=Base.SIGTERM) = TODO
+Base.kill(w::DistributedStdlibWorker, signum=Base.SIGTERM) = error("not implemented")
 
 interrupt(w::DistributedStdlibWorker) = Distributed.interrupt(w.pid) # TODO check windows
 

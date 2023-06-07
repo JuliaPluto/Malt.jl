@@ -7,7 +7,7 @@ using Test
 # More tests should be added in the future.
 
 
-@testset "Impl: $W" for W in (m.InProcessWorker, m.Worker)
+@testset "Impl: $W" for W in (m.DistributedStdlibWorker, m.InProcessWorker, m.Worker)
     @testset "Worker management" begin
         w = W()
         @test m.isrunning(w) === true
@@ -60,16 +60,21 @@ using Test
         @testset for _i in 1:10
             n = rand(Int)
 
+            @info "0"
             m.remote_eval(Main, w, quote
                 put!(rc, $(n))
             end)
 
             @test take!(lc) === n
-            
+            @info "1"
             put!(lc, n)
+            @info "2"
             @test take!(lc) === n
+            @info "3"
             put!(lc, n)
+            @info "4"
             put!(lc, n)
+            @info "5"
             @test take!(lc) === n
             @test take!(lc) === n
             
@@ -106,8 +111,6 @@ using Test
         @test m.isrunning(w) === true
 
         m.stop(w)
-        # TODO: why do i need kill here?
-        m.kill(w)
         m._wait_for_exit(w)
         @test m.isrunning(w) === false
     end
