@@ -17,7 +17,7 @@ on:
 jobs:
     test:
         runs-on: ${{ matrix.os }}
-        timeout-minutes: 10
+        timeout-minutes: 15
 
         strategy:
             # Without setting this, a failing test cancels all others
