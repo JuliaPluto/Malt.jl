@@ -22,7 +22,7 @@ mutable struct DistributedStdlibWorker <: AbstractWorker
         else
             :($(Distributed_expr).addprocs(1; exeflags=$(exeflags), env=$(env)) |> first)
         end
-        pid = Distributed.remotecall_eval(Main, 1, ex)
+        pid = Distributed.remotecall_eval(Main, 1, expr)
 
         # TODO: process preamble from Pluto?
 
