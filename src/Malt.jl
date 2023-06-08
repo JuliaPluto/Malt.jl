@@ -357,9 +357,11 @@ end
 """
     Malt.remote_do(f, w::Worker, args...; kwargs...)
 
-Evaluate `f(args...; kwargs...)` in worker `w` asynchronously.
-Unlike `remotecall`, it discards the result of the computation,
-meaning there's no way to check if the computation was completed.
+Start evaluating `f(args...; kwargs...)` in worker `w` asynchronously, and return `nothing`.
+
+Unlike `remotecall`, no reference to the remote call is available. This means:
+- You cannot wait for the call to complete on the worker.
+- The value returned by `f` is not available.
 """
 function remote_do(f, w::Worker, args...; kwargs...)
     _send_msg(
@@ -379,9 +381,9 @@ end
 ## Eval variants
 
 """
-    Malt.remote_eval(m, w::Worker, expr)
+    Malt.remote_eval(mod::Module=Main, w::Worker, expr)
 
-Evaluate expression `expr` under module `m` on the worker `w`.
+Evaluate expression `expr` under module `mod` on the worker `w`.
 `Malt.remote_eval` is asynchronous, like `Malt.remotecall`.
 
 The module `m` and the type of the result of `expr` must be defined in both the
@@ -399,19 +401,22 @@ julia> Malt.remote_eval_fetch(w, :x)
 ```
 
 """
-remote_eval(m::Module, w::AbstractWorker, expr) = remotecall(Core.eval, w, m, expr)
+remote_eval(mod::Module, w::AbstractWorker, expr) = remotecall(Core.eval, w, mod, expr)
+remote_eval(w::AbstractWorker, expr) = remote_eval(Main, w, expr)
 
 
 """
 Shorthand for `fetch(Malt.remote_eval(…))`. Blocks and returns the resulting value.
 """
-remote_eval_fetch(m::Module, w::AbstractWorker, expr) = remotecall_fetch(Core.eval, w, m, expr)
+remote_eval_fetch(mod::Module, w::AbstractWorker, expr) = remotecall_fetch(Core.eval, w, mod, expr)
+remote_eval_fetch(w::AbstractWorker, expr) = remote_eval_fetch(Main, w, expr)
 
 
 """
 Shorthand for `wait(Malt.remote_eval(…))`. Blocks and discards the resulting value.
 """
-remote_eval_wait(m::Module, w::AbstractWorker, expr) = remotecall_wait(Core.eval, w, m, expr)
+remote_eval_wait(mod::Module, w::AbstractWorker, expr) = remotecall_wait(Core.eval, w, mod, expr)
+remote_eval_wait(w::AbstractWorker, expr) = remote_eval_wait(Main, w, expr)
 
 
 """

@@ -135,13 +135,13 @@ end
 
     stub_type_name = gensym(:NonLocalType)
 
-    m.remote_eval_wait(Main, w, quote
+    m.remote_eval_wait(w, quote
         struct $(stub_type_name) end
     end)
 
     @test_throws(
         Exception,
-        m.remote_eval_fetch(Main, w, quote
+        m.remote_eval_fetch(w, quote
             $stub_type_name()
         end),
     )
@@ -152,13 +152,13 @@ end
 
     stub_type_name2 = gensym(:NonLocalException)
 
-    m.remote_eval_wait(Main, w, quote
+    m.remote_eval_wait(w, quote
         struct $stub_type_name2 <: Exception end
     end)
 
     @test_throws(
         Exception,
-        m.remote_eval_fetch(Main, w, quote
+        m.remote_eval_fetch(w, quote
             throw($stub_type_name2())
         end),
     )
@@ -169,7 +169,7 @@ end
 
     @test_throws(
         Exception,
-        m.remote_eval_fetch(Main, w, quote
+        m.remote_eval_fetch(w, quote
             try
                 throw($stub_type_name2())
             catch e
