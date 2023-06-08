@@ -51,20 +51,33 @@ const TEST_BENCHMARK = true
         
         @test f1() == f2() || f1() ≈ f2()
         
+        b1 = @benchmark $f1()
+        b2 = @benchmark $f2()
         
-        t1 = @belapsed $f1() seconds=1
-        t2 = @belapsed $f2() seconds=1
-        
+        t1 = mean(b1)
+        t2 = mean(b2)
+
+        σ1 = BenchmarkTools.std(b1)
+        σ2 = BenchmarkTools.std(b2)
+
+        tdiff = t1 - t2
+        σdiff = sqrt(σ1^2 + σ2^2)
+
         ratio = t1 / t2
         
-        @info "Expr $i" ratio t1 t2 
+        @info "Expr $i" ratio diff=Text("$tdiff ± $σdiff)") b1 b2
         
         if TEST_BENCHMARK
-            @test ratio < 1.2
+            # we should be faster, i.e.
+            # @test tdiff < 0
+
+            # and we have an admissible error of 2.5%
+            @test tdiff < 2*σdiff
         end
     end
     
     m.stop(w)
+    Distributed.rmprocs(p) |> wait
 end
 
 
