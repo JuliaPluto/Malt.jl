@@ -16,11 +16,15 @@ mutable struct DistributedStdlibWorker <: AbstractWorker
 
     function DistributedStdlibWorker(; env=String[], exeflags=[])
         # Spawn process
-        pid = Distributed.remotecall_eval(Main, 1, quote
-            $(Distributed_expr).addprocs(1; exeflags=$(exeflags), env=$(env)) |> first
-        end)
+        expr = if VERSION < v"1.8.0-aaa"
+            isempty(env) || @warn "Malt.DistributedStdlibWorker: the `env` kwarg requires Julia 1.8"
+            :($(Distributed_expr).addprocs(1; exeflags=$(exeflags)) |> first)
+        else
+            :($(Distributed_expr).addprocs(1; exeflags=$(exeflags), env=$(env)) |> first)
+        end
+        pid = Distributed.remotecall_eval(Main, 1, ex)
 
-        # TODO: process preamble
+        # TODO: process preamble from Pluto?
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
