@@ -53,7 +53,7 @@ end
 
 function worker_channel(w::DistributedStdlibWorker, expr)
     Core.eval(Main, quote
-        $(Distributed).RemoteChannel(() -> eval($expr), $(w.pid))
+        $(Distributed).RemoteChannel(() -> Core.eval(Main, $(QuoteNode(expr))), $(w.pid))
     end)
 end
 
@@ -67,10 +67,16 @@ function stop(w::DistributedStdlibWorker)
     nothing
 end
 
-Base.kill(w::DistributedStdlibWorker, signum=Base.SIGTERM) = error("not implemented")
+Base.kill(w::DistributedStdlibWorker, signum=Base.SIGTERM) = error("not implemented for DistributedStdlibWorker")
 
-interrupt(w::DistributedStdlibWorker) = Distributed.interrupt(w.pid) # TODO check windows
-
+function interrupt(w::DistributedStdlibWorker)
+    if Sys.iswindows()
+        @warn "Malt.interrupt is not supported on Windows for a DistributedStdlibWorker"
+        nothing
+    else
+        Distributed.interrupt(w.pid)
+    end
+end
 
 
 

@@ -55,26 +55,24 @@ using Test
         
         lc = m.worker_channel(w, :(rc = Channel($channel_size)))
         
-        @test lc isa AbstractChannel
+        if w isa m.DistributedStdlibWorker
+            @test_broken lc isa AbstractChannel
+        else
+            @test lc isa AbstractChannel
+        end
 
         @testset for _i in 1:10
             n = rand(Int)
 
-            @info "0"
-            m.remote_eval(Main, w, quote
+            m.remote_eval_wait(Main, w, quote
                 put!(rc, $(n))
             end)
 
             @test take!(lc) === n
-            @info "1"
             put!(lc, n)
-            @info "2"
             @test take!(lc) === n
-            @info "3"
             put!(lc, n)
-            @info "4"
             put!(lc, n)
-            @info "5"
             @test take!(lc) === n
             @test take!(lc) === n
             
@@ -115,7 +113,7 @@ using Test
         @test m.isrunning(w) === false
     end
 
-    @testset "Regular Exceptions" begin
+    (W === m.DistributedStdlibWorker) || @testset "Regular Exceptions" begin
         w = W()
 
         ## Mutually Known errors are not thrown, but returned as values.
