@@ -80,6 +80,10 @@ const TEST_BENCHMARK = true
 
             # and we have an admissible error of 2.5%
             @test tdiff < 2*σdiff
+
+            # NO because the samples are not normally distributed
+            # so let's just do a percentage again
+            @test ratio < 1.2
         end
     end
     
