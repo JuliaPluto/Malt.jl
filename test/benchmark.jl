@@ -51,8 +51,14 @@ const TEST_BENCHMARK = true
         
         @test f1() == f2() || f1() ≈ f2()
         
-        b1 = @benchmark $f1()
-        b2 = @benchmark $f2()
+        bench1 = @benchmarkable $f1()
+        bench2 = @benchmarkable $f2()
+
+        tune!(bench1)
+        tune!(bench2)
+
+        b1 = run(bench1)
+        b2 = run(bench2)
         
         t1 = mean(b1).time
         t2 = mean(b2).time
