@@ -44,10 +44,10 @@ The following table lists each function according to its scheduling and return v
 
 | Function                        | Scheduling | Return value    |
 |:--------------------------------|:-----------|:----------------|
-| [`Malt.remotecall`](@ref)       | Async      | <value>         |
-| [`Malt.remote_do`](@ref)        | Async      | `nothing`       |
 | [`Malt.remotecall_fetch`](@ref) | Blocking   | <value>         |
 | [`Malt.remotecall_wait`](@ref)  | Blocking   | `nothing`       |
+| [`Malt.remotecall`](@ref)       | Async      | `Task` that resolves to <value>         |
+| [`Malt.remote_do`](@ref)        | Async      | `nothing`       |
 
 
 ```@docs
