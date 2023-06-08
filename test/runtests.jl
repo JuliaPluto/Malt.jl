@@ -14,7 +14,6 @@ using Test
 
         # Terminating workers takes about 0.5s
         m.stop(w)
-        m._wait_for_exit(w)
         @test m.isrunning(w) === false
     end
 
@@ -25,7 +24,6 @@ using Test
         @test m.remotecall_fetch(&, w, true, true)
 
         m.stop(w)
-        m._wait_for_exit(w)
     end
 
 
@@ -44,7 +42,6 @@ using Test
         @test m.remote_eval_fetch(Main, w, :(Stub.x)) == str
 
         m.stop(w)
-        m._wait_for_exit(w)
     end
 
 
@@ -109,7 +106,6 @@ using Test
         @test m.isrunning(w) === true
 
         m.stop(w)
-        m._wait_for_exit(w)
         @test m.isrunning(w) === false
     end
 
@@ -201,7 +197,7 @@ end
     @test m.isrunning(w)
 
     m.stop(w)
-    m._wait_for_exit(w)
+    @test !m.isrunning(w)
 end
 
 include("nesting.jl")

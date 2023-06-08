@@ -88,7 +88,7 @@ the worker will also get a signal.
 ```@docs
 Malt.isrunning
 Malt.stop
-Malt.kill
+Base.kill(::Malt.Worker)
 Malt.interrupt
 Malt.TerminatedWorkerException
 ```
