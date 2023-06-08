@@ -54,8 +54,9 @@ const TEST_BENCHMARK = true
         bench1 = @benchmarkable $f1()
         bench2 = @benchmarkable $f2()
 
+        # we tune the first benchmark, and use the same tuned parameters for the second benchmark, to make the comparison fair.
         tune!(bench1)
-        tune!(bench2)
+        bench2.params = bench1.params
 
         b1 = run(bench1)
         b2 = run(bench2)
@@ -83,7 +84,7 @@ const TEST_BENCHMARK = true
     end
     
     m.stop(w)
-    Distributed.rmprocs(p) |> wait
+    Distributed.rmprocs(p; waitfor=30)
 end
 
 
@@ -93,16 +94,15 @@ end
         w = m.Worker()
         @assert(2 == m.remotecall_fetch(+, w, 1, 1))
         m.stop(w)
-        isdefined(m, :_wait_for_exit) || return
-        m._wait_for_exit(w)
     end
 
     function launch_with_distributed()
         p = Distributed.addprocs(1) |> only
         @assert(2 == Distributed.remotecall_fetch(+, p, 1, 1))
-        Distributed.rmprocs(p) |> wait
+        Distributed.rmprocs(p; waitfor=30)
     end
     
+    # run once to precompile
     launch_with_malt()
     launch_with_distributed()
     
