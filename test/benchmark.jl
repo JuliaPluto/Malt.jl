@@ -7,7 +7,7 @@ import Distributed
 const TEST_BENCHMARK = true
 
 
-@testset "Benchmark: $W" for W in (m.InProcessWorker, m.Worker)
+@testset "Benchmark: $W" for W in (m.DistributedStdlibWorker, m.InProcessWorker, m.Worker)
     
     
     w = W()

@@ -7,7 +7,7 @@ using Test
 # More tests should be added in the future.
 
 
-@testset "Impl: $W" for W in (m.InProcessWorker, m.Worker)
+@testset "Impl: $W" for W in (m.DistributedStdlibWorker, m.InProcessWorker, m.Worker)
     @testset "Worker management" begin
         w = W()
         @test m.isrunning(w) === true
@@ -52,17 +52,20 @@ using Test
         
         lc = m.worker_channel(w, :(rc = Channel($channel_size)))
         
-        @test lc isa AbstractChannel
+        if w isa m.DistributedStdlibWorker
+            @test_broken lc isa AbstractChannel
+        else
+            @test lc isa AbstractChannel
+        end
 
         @testset for _i in 1:10
             n = rand(Int)
 
-            m.remote_eval(Main, w, quote
+            m.remote_eval_wait(Main, w, quote
                 put!(rc, $(n))
             end)
 
             @test take!(lc) === n
-            
             put!(lc, n)
             @test take!(lc) === n
             put!(lc, n)
@@ -106,7 +109,7 @@ using Test
         @test m.isrunning(w) === false
     end
 
-    @testset "Regular Exceptions" begin
+    (W === m.DistributedStdlibWorker) || @testset "Regular Exceptions" begin
         w = W()
 
         ## Mutually Known errors are not thrown, but returned as values.
