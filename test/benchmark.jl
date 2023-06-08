@@ -7,7 +7,7 @@ import Distributed
 const TEST_BENCHMARK = true
 
 
-@testset "Benchmark: $W" for W in (m.InProcessWorker, m.Worker)
+@testset "Benchmark: $W" for W in (m.DistributedStdlibWorker, m.InProcessWorker, m.Worker)
     
     
     w = W()
@@ -16,8 +16,20 @@ const TEST_BENCHMARK = true
     
     
     p = Distributed.addprocs(1)[1]
-    
-    
+
+    setup = quote
+        bigs = [
+            zeros(UInt8, 50_000_000),
+            zeros(UInt8, 5_000_000),
+            zeros(UInt8, 500_000),
+            zeros(UInt8, 50_000),
+            zeros(UInt8, 5_000),
+            zeros(UInt8, 500),
+        ]
+    end
+
+    m.remote_eval_fetch(w, setup)
+    Distributed.remotecall_eval(Main, p, setup)
     
     exprs = [
         quote
@@ -32,6 +44,22 @@ const TEST_BENCHMARK = true
         
         quote
             zeros(UInt8, 50_000_000)
+        end
+
+        quote
+            bigs[1]
+        end
+        
+        quote
+            bigs[2]
+        end
+        
+        quote
+            bigs[3]
+        end
+        
+        quote
+            bigs[4]
         end
         
         quote
@@ -76,7 +104,7 @@ const TEST_BENCHMARK = true
         ratio_mean = mean1 / mean2
         ratio_median = median1 / median2
         
-        @info "Expr $i" mean1 mean2 ratio_mean ratio_median diff=Text("$round(Int64, tdiff) ± $round(Int64, σdiff))") b1 b2
+        @info "Expr $i" mean1 mean2 ratio_mean ratio_median diff=Text("$(round(Int64, tdiff)) ± $(round(Int64, σdiff))") b1 b2
         
         if TEST_BENCHMARK
             # we should be faster, i.e.
