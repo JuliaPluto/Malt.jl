@@ -54,11 +54,11 @@ const TEST_BENCHMARK = true
         b1 = @benchmark $f1()
         b2 = @benchmark $f2()
         
-        t1 = mean(b1)
-        t2 = mean(b2)
+        t1 = mean(b1).time
+        t2 = mean(b2).time
 
-        σ1 = BenchmarkTools.std(b1)
-        σ2 = BenchmarkTools.std(b2)
+        σ1 = BenchmarkTools.std(b1).time
+        σ2 = BenchmarkTools.std(b2).time
 
         tdiff = t1 - t2
         σdiff = sqrt(σ1^2 + σ2^2)
