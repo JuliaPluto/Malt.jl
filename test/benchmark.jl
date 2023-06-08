@@ -52,8 +52,8 @@ const TEST_BENCHMARK = true
         @test f1() == f2() || f1() ≈ f2()
         
         
-        t1 = @belapsed $f1() seconds=1
-        t2 = @belapsed $f2() seconds=1
+        t1 = @belapsed $f1() seconds=2
+        t2 = @belapsed $f2() seconds=2
         
         ratio = t1 / t2
         
@@ -65,6 +65,7 @@ const TEST_BENCHMARK = true
     end
     
     m.stop(w)
+    Distributed.rmprocs(p) |> wait
 end
 
 
