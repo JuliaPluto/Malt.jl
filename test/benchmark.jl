@@ -89,18 +89,22 @@ const TEST_BENCHMARK = true
         b1 = run(bench1)
         b2 = run(bench2)
         
-        t1 = mean(b1).time
-        t2 = mean(b2).time
+        mean1 = mean(b1).time
+        mean2 = mean(b2).time
+
+        median1 = BenchmarkTools.median(b1).time
+        median2 = BenchmarkTools.median(b2).time
 
         σ1 = BenchmarkTools.std(b1).time
         σ2 = BenchmarkTools.std(b2).time
 
-        tdiff = t1 - t2
+        tdiff = mean1 - mean2
         σdiff = sqrt(σ1^2 + σ2^2)
 
-        ratio = t1 / t2
+        ratio_mean = mean1 / mean2
+        ratio_median = median1 / median2
         
-        @info "Expr $i" t1 t2 ratio diff=Text("$(round(Int64, tdiff)) ± $(round(Int64, σdiff)))") b1 b2
+        @info "Expr $i" mean1 mean2 ratio_mean ratio_median diff=Text("$(round(Int64, tdiff)) ± $(round(Int64, σdiff))") b1 b2
         
         if TEST_BENCHMARK
             # we should be faster, i.e.
@@ -108,6 +112,10 @@ const TEST_BENCHMARK = true
 
             # and we have an admissible error of 2.5%
             @test tdiff < 2*σdiff
+
+            # NO because the samples are not normally distributed
+            # so let's just do a percentage again
+            @test ratio_median < 1.2
         end
     end
     
