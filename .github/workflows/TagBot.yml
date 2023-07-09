@@ -1,22 +1,35 @@
-# This GitHub action checks whether a new version of this package
-# has been registred in the official registry.
-# If so, it creates a new _release_:
-# https://github.com/JuliaPluto/PlutoSliderServer.jl/releases
-
 name: TagBot
-
 on:
   issue_comment:
     types:
       - created
   workflow_dispatch:
+    inputs:
+      lookback:
+        default: 3
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  deployments: read
+  issues: read
+  discussions: read
+  packages: read
+  pages: read
+  pull-requests: read
+  repository-projects: read
+  security-events: read
+  statuses: read
 
 jobs:
-    TagBot:
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.actor == 'JuliaTagBot'
-        runs-on: [ubuntu-latest]
-        steps:
-            - uses: JuliaRegistries/TagBot@v1
-              with:
-                  token: ${{ secrets.GITHUB_TOKEN }}
-                  lookback: 300
+  TagBot:
+    if: github.event_name == 'workflow_dispatch' || github.actor == 'JuliaTagBot'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: JuliaRegistries/TagBot@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Edit the following line to reflect the actual name of the GitHub Secret containing your private key
+          # ssh: ${{ secrets.DOCUMENTER_KEY }}
+          # ssh: ${{ secrets.NAME_OF_MY_SSH_PRIVATE_KEY_SECRET }}
