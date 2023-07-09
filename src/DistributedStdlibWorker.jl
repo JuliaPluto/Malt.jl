@@ -16,8 +16,8 @@ mutable struct DistributedStdlibWorker <: AbstractWorker
 
     function DistributedStdlibWorker(; env=String[], exeflags=[])
         # Spawn process
-        expr = if VERSION < v"1.8.0-aaa"
-            isempty(env) || @warn "Malt.DistributedStdlibWorker: the `env` kwarg requires Julia 1.8"
+        expr = if VERSION < v"1.9.0-aaa"
+            isempty(env) || @warn "Malt.DistributedStdlibWorker: the `env` kwarg requires Julia 1.9"
             :($(Distributed_expr).addprocs(1; exeflags=$(exeflags)) |> first)
         else
             :($(Distributed_expr).addprocs(1; exeflags=$(exeflags), env=$(env)) |> first)
