@@ -30,6 +30,9 @@ using Test
     @testset "Evaluating expressions" begin
         w = W()
         @test m.isrunning(w) === true
+        
+        @test m.remote_eval_fetch(Main, w, :(1 + 1)) == 2
+        @test m.remote_eval_fetch(Main, w, nothing) === nothing
 
         m.remote_eval_wait(Main, w, :(module Stub end))
 
