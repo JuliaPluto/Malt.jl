@@ -113,29 +113,31 @@ interrupt(::Nothing) = nothing
 function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id::MsgID)
     f, args, kwargs, respond_with_nothing = msg
 
-    success, result = try
-        result = f(args...; kwargs...)
+    @async begin
+        success, result = try
+            result = f(args...; kwargs...)
 
-        # @debug("WORKER: Evaluated result", result)
-        (true, respond_with_nothing ? nothing : result)
-    catch e
-        # @debug("WORKER: Got exception!", e)
-        (false, e)
+            # @debug("WORKER: Evaluated result", result)
+            (true, respond_with_nothing ? nothing : result)
+        catch e
+            # @debug("WORKER: Got exception!", e)
+            (false, e)
+        end
+
+        _serialize_msg(
+            socket,
+            success ? MsgType.from_worker_call_result : MsgType.from_worker_call_failure,
+            msg_id,
+            result
+        )
     end
-
-    _serialize_msg(
-        socket,
-        success ? MsgType.from_worker_call_result : MsgType.from_worker_call_failure,
-        msg_id,
-        result
-    )
 end
 
 
 function handle(::Val{MsgType.from_host_call_without_response}, socket, msg, msg_id::MsgID)
     f, args, kwargs, _ignored = msg
 
-    try
+    @async try
         f(args...; kwargs...)
     catch e
         @warn("WORKER: Got exception while running call without response", exception=(e, catch_backtrace()))

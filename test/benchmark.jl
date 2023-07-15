@@ -100,7 +100,7 @@ const TEST_BENCHMARK = true
 
         ratio = t1 / t2
         
-        @info "Expr $i" t1 t2 ratio diff=Text("$(round(Int64, tdiff)) ± $(round(Int64, σdiff)))") b1 b2
+        @info "Expr $i" t1 t2 ratio diff=Text("$(round(Int64, tdiff)) ± $(round(Int64, σdiff))") b1 b2
         
         if TEST_BENCHMARK
             # we should be faster, i.e.
