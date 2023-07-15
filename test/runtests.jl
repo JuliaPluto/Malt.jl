@@ -33,6 +33,7 @@ using Test
         
         @test m.remote_eval_fetch(Main, w, :(1 + 1)) == 2
         @test m.remote_eval_fetch(Main, w, nothing) === nothing
+        @test m.remote_eval_wait(Main, w, nothing) === nothing
 
         m.remote_eval_wait(Main, w, :(module Stub end))
 
@@ -44,6 +45,35 @@ using Test
 
         @test m.remote_eval_fetch(Main, w, :(Stub.x)) == str
 
+        m.stop(w)
+    end
+    
+    @testset "Async things" begin
+        w = W()
+        
+        @test m.remote_eval_fetch(w, :(x = 1 + 1)) == 2
+        @test m.remote_eval_fetch(w, :x) == 2
+        
+        # this should run async
+        m.remote_eval(w, quote
+            sleep(.5)
+            x = 900
+        end)
+        
+        @test m.remote_eval_fetch(w, :x) == 2
+        sleep(.55)
+        @test m.remote_eval_fetch(w, :x) == 900
+        
+        # this should run async
+        m.remote_do(Core.eval, w, Main, quote
+            sleep(.5)
+            x = 400
+        end)
+        
+        @test m.remote_eval_fetch(w, :x) == 900
+        sleep(.55)
+        @test m.remote_eval_fetch(w, :x) == 400
+        
         m.stop(w)
     end
 
