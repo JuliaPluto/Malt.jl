@@ -35,7 +35,7 @@ Malt.Worker
 
 ## Calling Functions
 
-The easiest way to execute code in a worker is with the `remotecall*` functions.
+The easiest way to execute code in a worker is with the `remote_call*` functions.
 
 Depending on the computation you want to perform, you might want to get the result
 synchronously or asynchronously; you might want to store the result or throw it away.
@@ -44,16 +44,16 @@ The following table lists each function according to its scheduling and return v
 
 | Function                        | Scheduling | Return value    |
 |:--------------------------------|:-----------|:----------------|
-| [`Malt.remotecall_fetch`](@ref) | Blocking   | <value>         |
-| [`Malt.remotecall_wait`](@ref)  | Blocking   | `nothing`       |
-| [`Malt.remotecall`](@ref)       | Async      | `Task` that resolves to <value>         |
+| [`Malt.remote_call_fetch`](@ref) | Blocking   | <value>         |
+| [`Malt.remote_call_wait`](@ref)  | Blocking   | `nothing`       |
+| [`Malt.remote_call`](@ref)       | Async      | `Task` that resolves to <value>         |
 | [`Malt.remote_do`](@ref)        | Async      | `nothing`       |
 
 
 ```@docs
-Malt.remotecall_fetch
-Malt.remotecall_wait
-Malt.remotecall
+Malt.remote_call_fetch
+Malt.remote_call_wait
+Malt.remote_call
 Malt.remote_do
 ```
 
@@ -63,7 +63,7 @@ In some cases, evaluating functions is not enough. For example, importing module
 alters the global state of the worker and can only be performed in the top level scope.
 For situations like this, you can evaluate code using the `remote_eval*` functions.
 
-Like the `remotecall*` functions, there's different a `remote_eval*` depending on the scheduling and return value.
+Like the `remote_call*` functions, there's different a `remote_eval*` depending on the scheduling and return value.
 
 | Function                        | Scheduling | Return value    |
 |:--------------------------------|:-----------|:----------------|
@@ -83,7 +83,7 @@ Malt.worker_channel
 If an exception occurs on the worker while calling a function or evaluating an expression, this exception is rethrown to the host. For example:
 
 ```julia-repl
-julia> Malt.remotecall_fetch(m1, :(sqrt(-1)))
+julia> Malt.remote_call_fetch(m1, :(sqrt(-1)))
 ERROR: Remote exception from Malt.Worker on port 9115:
 
 DomainError with -1.0:
@@ -100,7 +100,7 @@ The thrown exception is of the type `Malt.RemoteException`, and contains two fie
 
 !!! note
     
-    When using the async scheduling functions (`remotecall`, `remote_eval`), calling `wait` or `fetch` on the returned (failed) `Task` will throw a `Base.TaskFailedException`, not a `Malt.RemoteException`.
+    When using the async scheduling functions (`remote_call`, `remote_eval`), calling `wait` or `fetch` on the returned (failed) `Task` will throw a `Base.TaskFailedException`, not a `Malt.RemoteException`.
     
     (The `Malt.RemoteException` is available with `task_failed_exception.task.exception`.)
 

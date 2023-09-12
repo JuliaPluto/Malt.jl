@@ -29,7 +29,7 @@ const TEST_BENCHMARK = true
     end
 
     m.remote_eval_fetch(w, setup)
-    Distributed.remotecall_eval(Main, p, setup)
+    Distributed.remote_call_eval(Main, p, setup)
     
     exprs = [
         quote
@@ -75,7 +75,7 @@ const TEST_BENCHMARK = true
         ex = exprs[i]
         
         f1() = m.remote_eval_fetch(Main, w, ex)
-        f2() = Distributed.remotecall_eval(Main, p, ex)
+        f2() = Distributed.remote_call_eval(Main, p, ex)
         
         @test f1() == f2() || f1() ≈ f2()
         
@@ -120,13 +120,13 @@ end
 @testset "Benchmark launch" begin
     function launch_with_malt()
         w = m.Worker()
-        @assert(2 == m.remotecall_fetch(+, w, 1, 1))
+        @assert(2 == m.remote_call_fetch(+, w, 1, 1))
         m.stop(w)
     end
 
     function launch_with_distributed()
         p = Distributed.addprocs(1) |> only
-        @assert(2 == Distributed.remotecall_fetch(+, p, 1, 1))
+        @assert(2 == Distributed.remote_call_fetch(+, p, 1, 1))
         Distributed.rmprocs(p; waitfor=30)
     end
     
