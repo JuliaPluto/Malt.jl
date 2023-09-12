@@ -37,7 +37,8 @@ end
             CallFailedException,
             m.remote_eval_wait(w, :(sqrt(-1))),
         )
-        @test_throws(
+        # searching for strings requires Julia 1.8
+        VERSION >= v"1.8.0" && @test_throws(
             ["Remote exception", "DomainError", "math.jl"],
             m.remote_eval_wait(w, :(sqrt(-1))),
         )
@@ -88,7 +89,8 @@ end
             CallFailedAndDeserializationOfExceptionFailedException,
             m.remote_eval_fetch(w, :(throw($stub_type_name2()))),
         )
-        @test_throws(
+        # searching for strings requires Julia 1.8
+        VERSION >= v"1.8.0" && @test_throws(
             ["Remote exception", W !== m.DistributedStdlibWorker ? "secretttzz" : "deseriali"],
             m.remote_eval_fetch(w, :(throw($stub_type_name2()))),
         )
