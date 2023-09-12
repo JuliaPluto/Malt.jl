@@ -156,7 +156,7 @@ function handle(::Val{MsgType.special_serialization_failure}, socket, msg, msg_i
     )
 end
 
-const _channel_cache = Dict{UInt64, Channel}()
+const _channel_cache = Dict{UInt64, AbstractChannel}()
 
 if abspath(PROGRAM_FILE) == @__FILE__
     main()

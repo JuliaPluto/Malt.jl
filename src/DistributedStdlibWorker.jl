@@ -69,7 +69,7 @@ function remote_do(f, w::DistributedStdlibWorker, args...; kwargs...)
 end
 
 function worker_channel(w::DistributedStdlibWorker, expr)
-    Core.eval(Main, quote
+    @transform_exception w Core.eval(Main, quote
         $(Distributed).RemoteChannel(() -> Core.eval(Main, $(QuoteNode(expr))), $(w.pid))
     end)
 end

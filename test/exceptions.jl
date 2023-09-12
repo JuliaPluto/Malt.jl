@@ -121,14 +121,14 @@ end
         
         
         # TODO
-        # @test_throws(
-        #     Exception,
-        #     m.worker_channel(w, :(123))
-        # )
-        # @test_throws(
-        #     Exception,
-        #     m.worker_channel(w, :(sqrt(-1)))
-        # )
+        @test_throws(
+            Exception,
+            m.worker_channel(w, :(123))
+        )
+        @test_throws(
+            m.RemoteException,
+            m.worker_channel(w, :(sqrt(-1)))
+        )
         @test m.remote_call_fetch(&, w, true, true)
     end
 

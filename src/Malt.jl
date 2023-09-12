@@ -454,14 +454,18 @@ remote_eval_wait(w::AbstractWorker, expr) = remote_eval_wait(Main, w, expr)
     Malt.worker_channel(w::AbstractWorker, expr)
 
 Create a channel to communicate with worker `w`. `expr` must be an expression
-that evaluates to a Channel. `expr` should assign the Channel to a (global) variable
+that evaluates to an `AbstractChannel`. `expr` should assign the channel to a (global) variable
 so the worker has a handle that can be used to send messages back to the manager.
 """
 function worker_channel(w::Worker, expr)
     RemoteChannel(w, expr)
 end
 function worker_channel(w::InProcessWorker, expr)
-    Core.eval(w.host_module, expr)
+    remote_call_fetch(w) do
+        result = Core.eval(w.host_module, expr)
+        @assert result isa AbstractChannel
+        result
+    end
 end
 
 
