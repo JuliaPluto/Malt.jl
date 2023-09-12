@@ -22,7 +22,7 @@ mutable struct DistributedStdlibWorker <: AbstractWorker
         else
             :($(Distributed_expr).addprocs(1; exeflags=$(exeflags), env=$(env)) |> first)
         end
-        pid = Distributed.remotecall_eval(Main, 1, expr)
+        pid = Distributed.remote_call_eval(Main, 1, expr)
 
         # TODO: process preamble from Pluto?
 
@@ -51,16 +51,16 @@ macro transform_exception(worker, ex)
     end)
 end
 
-function remotecall(f, w::DistributedStdlibWorker, args...; kwargs...)
-    @async Distributed.remotecall_fetch(f, w.pid, args...; kwargs...)
+function remote_call(f, w::DistributedStdlibWorker, args...; kwargs...)
+    @async Distributed.remote_call_fetch(f, w.pid, args...; kwargs...)
 end
 
-function remotecall_fetch(f, w::DistributedStdlibWorker, args...; kwargs...)
-    @transform_exception w Distributed.remotecall_fetch(f, w.pid, args...; kwargs...)
+function remote_call_fetch(f, w::DistributedStdlibWorker, args...; kwargs...)
+    @transform_exception w Distributed.remote_call_fetch(f, w.pid, args...; kwargs...)
 end
 
-function remotecall_wait(f, w::DistributedStdlibWorker, args...; kwargs...)
-    @transform_exception w Distributed.remotecall_wait(f, w.pid, args...; kwargs...)
+function remote_call_wait(f, w::DistributedStdlibWorker, args...; kwargs...)
+    @transform_exception w Distributed.remote_call_wait(f, w.pid, args...; kwargs...)
     nothing
 end
 
@@ -78,7 +78,7 @@ isrunning(w::DistributedStdlibWorker) = w.isrunning
 
 function stop(w::DistributedStdlibWorker)
     w.isrunning = false
-    Distributed.remotecall_eval(Main, 1, quote
+    Distributed.remote_call_eval(Main, 1, quote
         $(Distributed_expr).rmprocs($(w.pid)) |> wait
     end)
     nothing

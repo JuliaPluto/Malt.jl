@@ -49,7 +49,7 @@ end
         
         @test_nowarn m.remote_do(sqrt, w, -1)
         
-        @test m.remotecall_fetch(&, w, true, true)
+        @test m.remote_call_fetch(&, w, true, true)
     end
     
     W === m.InProcessWorker || @testset "Deserializing values of unknown types" begin
@@ -68,7 +68,7 @@ end
             TaskFailedException,
             fetch(m.remote_eval(w, :($(stub_type_name)()))),
         )
-        @test m.remotecall_fetch(&, w, true, true)
+        @test m.remote_call_fetch(&, w, true, true)
     end
 
     stub_type_name2 = gensym(:NonLocalException)
@@ -94,7 +94,7 @@ end
             fetch(m.remote_eval(w, :(throw($stub_type_name2())))),
         )
 
-        @test m.remotecall_fetch(&, w, true, true)
+        @test m.remote_call_fetch(&, w, true, true)
     end
 
     @testset "Returning an exception" begin
@@ -129,7 +129,7 @@ end
         #     Exception,
         #     m.worker_channel(w, :(sqrt(-1)))
         # )
-        @test m.remotecall_fetch(&, w, true, true)
+        @test m.remote_call_fetch(&, w, true, true)
     end
 
     # The worker should be able to handle all that throwing

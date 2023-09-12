@@ -22,7 +22,7 @@ include("./shared.jl")
 abstract type AbstractWorker end
 
 """
-Malt will raise a `TerminatedWorkerException` when a `remotecall` is made to a `Worker`
+Malt will raise a `TerminatedWorkerException` when a `remote_call` is made to a `Worker`
 that has already been terminated.
 """
 struct TerminatedWorkerException <: Exception end
@@ -308,7 +308,7 @@ end
 
 
 """
-    Malt.remotecall(f, w::Worker, args...; kwargs...)
+    Malt.remote_call(f, w::Worker, args...; kwargs...)
 
 Evaluate `f(args...; kwargs...)` in worker `w` asynchronously.
 Returns a task that acts as a promise; the result value of the task is the
@@ -319,23 +319,23 @@ The function `f` must already be defined in the namespace of `w`.
 # Examples
 
 ```julia-repl
-julia> promise = Malt.remotecall(uppercase ∘ *, w, "I ", "declare ", "bankruptcy!");
+julia> promise = Malt.remote_call(uppercase ∘ *, w, "I ", "declare ", "bankruptcy!");
 
 julia> fetch(promise)
 "I DECLARE BANKRUPTCY!"
 ```
 """
-function remotecall(f, w::Worker, args...; kwargs...)
+function remote_call(f, w::Worker, args...; kwargs...)
     _send_receive_async(
         w,
         MsgType.from_host_call_with_response,
         _new_call_msg(true, f, args, kwargs),
     )
 end
-function remotecall(f, w::InProcessWorker, args...; kwargs...)
-    w.latest_request_task = @async remotecall_fetch(f, w, args...; kwargs...)
+function remote_call(f, w::InProcessWorker, args...; kwargs...)
+    w.latest_request_task = @async remote_call_fetch(f, w, args...; kwargs...)
 end
-function remotecall_fetch(f, w::InProcessWorker, args...; kwargs...)
+function remote_call_fetch(f, w::InProcessWorker, args...; kwargs...)
     try
         f(args...; kwargs...)
     catch ex
@@ -347,20 +347,20 @@ function remotecall_fetch(f, w::InProcessWorker, args...; kwargs...)
         ))
     end
 end
-function remotecall_wait(f, w::InProcessWorker, args...; kwargs...)
-    remotecall_fetch(f, w, args...; kwargs...)
+function remote_call_wait(f, w::InProcessWorker, args...; kwargs...)
+    remote_call_fetch(f, w, args...; kwargs...)
     nothing
 end
 
 """
-    Malt.remotecall_fetch(f, w::Worker, args...; kwargs...)
+    Malt.remote_call_fetch(f, w::Worker, args...; kwargs...)
 
-Shorthand for `fetch(Malt.remotecall(…))`. Blocks and then returns the result of the remote call.
+Shorthand for `fetch(Malt.remote_call(…))`. Blocks and then returns the result of the remote call.
 """
-function remotecall_fetch(f, w::AbstractWorker, args...; kwargs...)
-    fetch(remotecall(f, w, args...; kwargs...))
+function remote_call_fetch(f, w::AbstractWorker, args...; kwargs...)
+    fetch(remote_call(f, w, args...; kwargs...))
 end
-function remotecall_fetch(f, w::Worker, args...; kwargs...)
+function remote_call_fetch(f, w::Worker, args...; kwargs...)
     _send_receive(
         w,
         MsgType.from_host_call_with_response,
@@ -369,14 +369,14 @@ function remotecall_fetch(f, w::Worker, args...; kwargs...)
 end
 
 """
-    Malt.remotecall_wait(f, w::Worker, args...; kwargs...)
+    Malt.remote_call_wait(f, w::Worker, args...; kwargs...)
 
-Shorthand for `wait(Malt.remotecall(…))`. Blocks and discards the resulting value.
+Shorthand for `wait(Malt.remote_call(…))`. Blocks and discards the resulting value.
 """
-function remotecall_wait(f, w::AbstractWorker, args...; kwargs...)
-    wait(remotecall(f, w, args...; kwargs...))
+function remote_call_wait(f, w::AbstractWorker, args...; kwargs...)
+    wait(remote_call(f, w, args...; kwargs...))
 end
-function remotecall_wait(f, w::Worker, args...; kwargs...)
+function remote_call_wait(f, w::Worker, args...; kwargs...)
     _send_receive(
         w,
         MsgType.from_host_call_with_response,
@@ -390,7 +390,7 @@ end
 
 Start evaluating `f(args...; kwargs...)` in worker `w` asynchronously, and return `nothing`.
 
-Unlike `remotecall`, no reference to the remote call is available. This means:
+Unlike `remote_call`, no reference to the remote call is available. This means:
 - You cannot wait for the call to complete on the worker.
 - The value returned by `f` is not available.
 """
@@ -415,7 +415,7 @@ end
     Malt.remote_eval(mod::Module=Main, w::Worker, expr)
 
 Evaluate expression `expr` under module `mod` on the worker `w`.
-`Malt.remote_eval` is asynchronous, like `Malt.remotecall`.
+`Malt.remote_eval` is asynchronous, like `Malt.remote_call`.
 
 The module `m` and the type of the result of `expr` must be defined in both the
 main process and the worker.
@@ -432,21 +432,21 @@ julia> Malt.remote_eval_fetch(w, :x)
 ```
 
 """
-remote_eval(mod::Module, w::AbstractWorker, expr) = remotecall(Core.eval, w, mod, expr)
+remote_eval(mod::Module, w::AbstractWorker, expr) = remote_call(Core.eval, w, mod, expr)
 remote_eval(w::AbstractWorker, expr) = remote_eval(Main, w, expr)
 
 
 """
 Shorthand for `fetch(Malt.remote_eval(…))`. Blocks and returns the resulting value.
 """
-remote_eval_fetch(mod::Module, w::AbstractWorker, expr) = remotecall_fetch(Core.eval, w, mod, expr)
+remote_eval_fetch(mod::Module, w::AbstractWorker, expr) = remote_call_fetch(Core.eval, w, mod, expr)
 remote_eval_fetch(w::AbstractWorker, expr) = remote_eval_fetch(Main, w, expr)
 
 
 """
 Shorthand for `wait(Malt.remote_eval(…))`. Blocks and discards the resulting value.
 """
-remote_eval_wait(mod::Module, w::AbstractWorker, expr) = remotecall_wait(Core.eval, w, mod, expr)
+remote_eval_wait(mod::Module, w::AbstractWorker, expr) = remote_call_wait(Core.eval, w, mod, expr)
 remote_eval_wait(w::AbstractWorker, expr) = remote_eval_wait(Main, w, expr)
 
 
@@ -567,7 +567,7 @@ end
     Malt.interrupt(w::Worker)
 
 Send an interrupt signal to the worker process. This will interrupt the
-latest request (`remotecall*` or `remote_eval*`) that was sent to the worker.
+latest request (`remote_call*` or `remote_eval*`) that was sent to the worker.
 """
 function interrupt(w::Worker)
     if Sys.iswindows()

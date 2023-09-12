@@ -19,7 +19,7 @@
     @testset "Evaluating functions" begin
         w = W()
         @test m.isrunning(w)
-        @test m.remotecall_fetch(&, w, true, true)
+        @test m.remote_call_fetch(&, w, true, true)
 
         m.stop(w)
     end
