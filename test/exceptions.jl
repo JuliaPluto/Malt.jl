@@ -42,15 +42,10 @@ end
             ["Remote exception", "DomainError", "math.jl"],
             m.remote_eval_wait(w, :(sqrt(-1))),
         )
-        # TODO
-        # @test_throws(
-        #     m.RemoteException,
-        #     wait(m.remote_eval(w, :(sqrt(-1)))),
-        # )
-        # @test_throws(
-        #     TaskFailedException,
-        #     wait(m.remote_eval(w, :(sqrt(-1)))),
-        # )
+        @test_throws(
+            TaskFailedException,
+            wait(m.remote_eval(w, :(sqrt(-1)))),
+        )
         
         @test_nowarn m.remote_do(sqrt, w, -1)
         

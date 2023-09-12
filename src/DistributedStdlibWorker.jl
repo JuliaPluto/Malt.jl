@@ -94,9 +94,3 @@ function interrupt(w::DistributedStdlibWorker)
         Distributed.interrupt(w.pid)
     end
 end
-
-
-
-
-
-# TODO: wrap exceptions
