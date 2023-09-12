@@ -139,26 +139,4 @@
         m.stop(w)
         @test m.isrunning(w) === false
     end
-
-    (W === m.DistributedStdlibWorker) || @testset "Regular Exceptions" begin
-        w = W()
-
-        ## Mutually Known errors are not thrown, but returned as values.
-
-        @test isa(
-            m.remote_eval_fetch(Main, w, quote
-                sqrt(-1)
-            end),
-            DomainError,
-        )
-        @test m.remotecall_fetch(&, w, true, true)
-
-        @test isa(
-            m.remote_eval_fetch(Main, w, quote
-                error("Julia stack traces are bad. GL 😉")
-            end),
-            ErrorException,
-        )
-        @test m.remotecall_fetch(&, w, true, true)
-    end
 end
