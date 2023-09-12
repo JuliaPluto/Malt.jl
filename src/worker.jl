@@ -1,6 +1,8 @@
+pushfirst!(LOAD_PATH, "@stdlib")
 using Logging: Logging, @debug
 using Serialization: serialize, deserialize
 using Sockets: Sockets
+popfirst!(LOAD_PATH)
 
 ## Allow catching InterruptExceptions
 Base.exit_on_sigint(false)
