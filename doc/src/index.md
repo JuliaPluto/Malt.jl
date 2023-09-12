@@ -31,6 +31,14 @@ and whether worker execution is multi-threaded will depend on your operating sys
 Malt.Worker
 ```
 
+### Special workers
+
+There are two special worker types that can be used for backwards-compatibility or other projects. You can also make your own worker type by extending the `Malt.AbstractWorker` type.
+
+```@docs
+Malt.InProcessWorker
+Malt.DistributedStdlibWorker
+```
 
 
 ## Calling Functions
