@@ -1,7 +1,7 @@
 name = "Malt"
 uuid = "36869731-bdee-424d-aa32-cab38c994e3b"
 authors = ["Sergio Alejandro Vargas <savargasqu+git@unal.edu.co>"]
-version = "0.8.3"
+version = "1.0.0"
 
 [deps]
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
