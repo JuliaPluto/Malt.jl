@@ -36,6 +36,8 @@ mutable struct DistributedStdlibWorker <: AbstractWorker
     end
 end
 
+Base.summary(io::IO, w::DistributedStdlibWorker) = write(io, "Malt.DistributedStdlibWorker with pid $(w.pid)")
+
 
 function remotecall(f, w::DistributedStdlibWorker, args...; kwargs...)
     Distributed.remotecall(f, w.pid, args...; kwargs...)

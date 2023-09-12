@@ -18,6 +18,9 @@ include("./shared.jl")
 
 
 
+
+abstract type AbstractWorker end
+
 """
 Malt will raise a `TerminatedWorkerException` when a `remotecall` is made to a `Worker`
 that has already been terminated.
@@ -31,8 +34,6 @@ struct WorkerResult
 end
 
 unwrap_worker_result(result::WorkerResult) = result.should_throw ? throw(result.value) : result.value
-
-abstract type AbstractWorker end
 
 include("DistributedStdlibWorker.jl")
 
@@ -52,6 +53,8 @@ mutable struct InProcessWorker <: AbstractWorker
         new(mod, task, true)
     end
 end
+
+Base.summary(io::IO, w::InProcessWorker) = write(io, "Malt.InProcessWorker in module $(w.host_module)")
 
 """
     Malt.Worker()
@@ -101,6 +104,7 @@ mutable struct Worker <: AbstractWorker
     end
 end
 
+Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port)")
 
 
 function _receive_loop(worker::Worker)
