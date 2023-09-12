@@ -121,7 +121,9 @@ function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id
             (true, respond_with_nothing ? nothing : result)
         catch e
             # @debug("WORKER: Got exception!", e)
-            (false, e)
+            (false, sprint() do io
+                Base.invokelatest(showerror, io, e, catch_backtrace())
+            end)
         end
 
         _serialize_msg(

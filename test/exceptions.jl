@@ -1,64 +1,139 @@
+macro catcherror(ex)
+    return quote
+        local success
+        e = try
+            $(esc(ex))
+            success = true
+        catch e
+            success = false
+            e
+        end
+        @assert !success "Expression did not throw :("
+        e
+    end
+end
 
-@testset "Serialization Exceptions" begin
-    ## Serializing values of unknown types will cause an exception.
-    w = m.Worker() # does not apply to Malt.InProcessWorker
-
-    stub_type_name = gensym(:NonLocalType)
-
-    m.remote_eval_wait(w, quote
-        struct $(stub_type_name) end
-    end)
-
-    @test_throws(
-        Exception,
-        m.remote_eval_fetch(w, quote
-            $stub_type_name()
-        end),
+# @testset "Exceptions" begin
+@testset "Exceptions: $W" for W in (
+        m.DistributedStdlibWorker, 
+        m.Worker, 
+        m.InProcessWorker, 
     )
-    @test m.remotecall_fetch(&, w, true, true)
+    
+    CallFailedException = m.RemoteException
+    CallFailedAndDeserializationOfExceptionFailedException = m.RemoteException
+    # Distributed cannot easily distinguish between a call that failed and a call that returned something that could not be deserialized by the host.
+    DeserializationFailedException = W === m.DistributedStdlibWorker ? Exception : ErrorException
+    
+    
+    
+    w = W() # does not apply to Malt.InProcessWorker
+    
+    
+    @testset "Remote failure" begin
+        # m.remote_eval_wait(w, :(sqrt(-1)))
+        
+        @test_throws(
+            CallFailedException,
+            m.remote_eval_wait(w, :(sqrt(-1))),
+        )
+        @test_throws(
+            ["Remote exception", "DomainError", "math.jl"],
+            m.remote_eval_wait(w, :(sqrt(-1))),
+        )
+        # TODO
+        # @test_throws(
+        #     m.RemoteException,
+        #     wait(m.remote_eval(w, :(sqrt(-1)))),
+        # )
+        # @test_throws(
+        #     TaskFailedException,
+        #     wait(m.remote_eval(w, :(sqrt(-1)))),
+        # )
+        
+        @test_nowarn m.remote_do(sqrt, w, -1)
+        
+        @test m.remotecall_fetch(&, w, true, true)
+    end
+    
+    W === m.InProcessWorker || @testset "Deserializing values of unknown types" begin
+        stub_type_name = gensym(:NonLocalType)
 
-
-    ## Throwing unknown exceptions will definitely cause an exception.
+        m.remote_eval_wait(w, quote
+            struct $(stub_type_name) end
+        end)
+        # TODO
+        m.remote_eval_wait(w, :($stub_type_name()))
+        @test_throws(
+            DeserializationFailedException,
+            m.remote_eval_fetch(w, :($(stub_type_name)())),
+        )
+        @test_throws(
+            TaskFailedException,
+            fetch(m.remote_eval(w, :($(stub_type_name)()))),
+        )
+        @test m.remotecall_fetch(&, w, true, true)
+    end
 
     stub_type_name2 = gensym(:NonLocalException)
 
     m.remote_eval_wait(w, quote
         struct $stub_type_name2 <: Exception end
+        Base.showerror(io::IO, e::$stub_type_name2) = print(io, "secretttzz")
     end)
 
-    @test_throws(
-        Exception,
-        m.remote_eval_fetch(w, quote
-            throw($stub_type_name2())
-        end),
-    )
-    @test m.remotecall_fetch(&, w, true, true)
+    @testset "Throwing unknown exception" begin
+        
+        @test_throws(
+            CallFailedAndDeserializationOfExceptionFailedException,
+            m.remote_eval_fetch(w, :(throw($stub_type_name2()))),
+        )
+        @test_throws(
+            ["Remote exception", W !== m.DistributedStdlibWorker ? "secretttzz" : "deseriali"],
+            m.remote_eval_fetch(w, :(throw($stub_type_name2()))),
+        )
+        @test_throws(
+            TaskFailedException,
+            fetch(m.remote_eval(w, :(throw($stub_type_name2())))),
+        )
 
+        @test m.remotecall_fetch(&, w, true, true)
+    end
 
-    ## Catching unknown exceptions and returning them as values also causes an exception.
-
-    @test_throws(
-        Exception,
-        m.remote_eval_fetch(w, quote
+    @testset "Returning an exception" begin
+        
+        @test_nowarn m.remote_eval_fetch(w, quote
             try
-                throw($stub_type_name2())
+                sqrt(-1)
             catch e
                 e
             end
-        end),
-    )
-    @test m.remotecall_fetch(&, w, true, true)
-    
-    
-    # TODO
-    # @test_throws(
-    #     Exception,
-    #     m.worker_channel(w, :(123))
-    # )
-    # @test_throws(
-    #     Exception,
-    #     m.worker_channel(w, :(sqrt(-1)))
-    # )
+        end)
+        
+        ## Catching unknown exceptions and returning them as values also causes an exception.
+        W === m.InProcessWorker || @test_throws(
+            DeserializationFailedException,
+            m.remote_eval_fetch(w, quote
+                try
+                    throw($stub_type_name2())
+                catch e
+                    e
+                end
+            end),
+        )
+        
+        
+        # TODO
+        # @test_throws(
+        #     Exception,
+        #     m.worker_channel(w, :(123))
+        # )
+        # @test_throws(
+        #     Exception,
+        #     m.worker_channel(w, :(sqrt(-1)))
+        # )
+        @test m.remotecall_fetch(&, w, true, true)
+    end
 
     # The worker should be able to handle all that throwing
     @test m.isrunning(w)
