@@ -53,8 +53,7 @@ function remotecall_wait(f, w::DistributedStdlibWorker, args...; kwargs...)
 end
 
 function remote_do(f, w::DistributedStdlibWorker, args...; kwargs...)
-    Distributed.remotecall(f, w.pid, args...; kwargs...)
-    nothing
+    Distributed.remote_do(f, w.pid, args...; kwargs...)
 end
 
 function worker_channel(w::DistributedStdlibWorker, expr)
