@@ -10,9 +10,11 @@
         w = W()
         @test m.isrunning(w) === true
 
+        W === m.Worker && @test length(m.__iNtErNaL_get_running_procs()) == 1
         # Terminating workers takes about 0.5s
         m.stop(w)
         @test m.isrunning(w) === false
+        W === m.Worker && @test length(m.__iNtErNaL_get_running_procs()) == 0
     end
 
 

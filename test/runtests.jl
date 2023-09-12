@@ -1,11 +1,18 @@
 import Malt as m
 using Test
 
-include("basic.jl")
-include("exceptions.jl")
-include("nesting.jl")
-include("benchmark.jl")
 
+v() = @assert isempty(m.__iNtErNaL_get_running_procs())
+
+v()
+include("basic.jl")
+v()
+include("exceptions.jl")
+v()
+include("nesting.jl")
+v()
+include("benchmark.jl")
+v()
 
 
 #TODO: 

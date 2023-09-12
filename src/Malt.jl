@@ -72,6 +72,9 @@ end
 
 Base.summary(io::IO, w::InProcessWorker) = write(io, "Malt.InProcessWorker in module $(w.host_module)")
 
+const __iNtErNaL_running_procs = Set{Base.Process}()
+__iNtErNaL_get_running_procs() = filter!(Base.process_running, __iNtErNaL_running_procs)
+
 """
     Malt.Worker()
 
@@ -98,6 +101,10 @@ mutable struct Worker <: AbstractWorker
         # Spawn process
         cmd = _get_worker_cmd(; env, exeflags)
         proc = open(cmd, "w+")
+        
+        # Keep internal list
+        __iNtErNaL_get_running_procs()
+        push!(__iNtErNaL_running_procs, proc)
 
         # Block until reading the port number of the process (from its stdout)
         port_str = readline(proc)
