@@ -39,16 +39,28 @@ end
 Base.summary(io::IO, w::DistributedStdlibWorker) = write(io, "Malt.DistributedStdlibWorker with pid $(w.pid)")
 
 
+macro transform_exception(worker, ex)
+    :(try
+        $(esc(ex))
+    catch e
+        if e isa Distributed.RemoteException
+            throw($(RemoteException)($(esc(worker)), sprint(showerror, e.captured)))
+        else
+            rethrow(e)
+        end
+    end)
+end
+
 function remotecall(f, w::DistributedStdlibWorker, args...; kwargs...)
-    Distributed.remotecall(f, w.pid, args...; kwargs...)
+    @async Distributed.remotecall_fetch(f, w.pid, args...; kwargs...)
 end
 
 function remotecall_fetch(f, w::DistributedStdlibWorker, args...; kwargs...)
-    Distributed.remotecall_fetch(f, w.pid, args...; kwargs...)
+    @transform_exception w Distributed.remotecall_fetch(f, w.pid, args...; kwargs...)
 end
 
 function remotecall_wait(f, w::DistributedStdlibWorker, args...; kwargs...)
-    Distributed.remotecall_wait(f, w.pid, args...; kwargs...)
+    @transform_exception w Distributed.remotecall_wait(f, w.pid, args...; kwargs...)
     nothing
 end
 
@@ -82,9 +94,3 @@ function interrupt(w::DistributedStdlibWorker)
         Distributed.interrupt(w.pid)
     end
 end
-
-
-
-
-
-# TODO: wrap exceptions

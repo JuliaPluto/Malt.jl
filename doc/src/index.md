@@ -51,10 +51,10 @@ The following table lists each function according to its scheduling and return v
 
 
 ```@docs
-Malt.remotecall
-Malt.remote_do
 Malt.remotecall_fetch
 Malt.remotecall_wait
+Malt.remotecall
+Malt.remote_do
 ```
 
 ## Evaluating expressions
@@ -65,13 +65,45 @@ For situations like this, you can evaluate code using the `remote_eval*` functio
 
 Like the `remotecall*` functions, there's different a `remote_eval*` depending on the scheduling and return value.
 
+| Function                        | Scheduling | Return value    |
+|:--------------------------------|:-----------|:----------------|
+| [`Malt.remote_eval_fetch`](@ref) | Blocking   | <value>         |
+| [`Malt.remote_eval_wait`](@ref)  | Blocking   | `nothing`       |
+| [`Malt.remote_eval`](@ref)       | Async      | `Task` that resolves to <value>         |
 
 ```@docs
-Malt.remote_eval
 Malt.remote_eval_fetch
 Malt.remote_eval_wait
+Malt.remote_eval
 Malt.worker_channel
 ```
+
+## Exceptions
+
+If an exception occurs on the worker while calling a function or evaluating an expression, this exception is rethrown to the host. For example:
+
+```julia-repl
+julia> Malt.remotecall_fetch(m1, :(sqrt(-1)))
+ERROR: Remote exception from Malt.Worker on port 9115:
+
+DomainError with -1.0:
+sqrt will only return a complex result if called with a complex argument. Try sqrt(Complex(x)).
+Stacktrace:
+ [1] throw_complex_domainerror(f::Symbol, x::Float64)
+   @ Base.Math ./math.jl:33
+ [2] sqrt
+   @ ./math.jl:591 [inlined]
+ ...
+```
+
+The thrown exception is of the type `Malt.RemoteException`, and contains two fields: `worker` and `message::String`. The original exception object (`DomainError` in the example above) is not availabale to the host.
+
+!!! note
+    
+    When using the async scheduling functions (`remotecall`, `remote_eval`), calling `wait` or `fetch` on the returned (failed) `Task` will throw a `Base.TaskFailedException`, not a `Malt.RemoteException`.
+    
+    (The `Malt.RemoteException` is available with `task_failed_exception.task.exception`.)
+
 
 ## Signals and Termination
 

@@ -27,13 +27,29 @@ that has already been terminated.
 """
 struct TerminatedWorkerException <: Exception end
 
+struct RemoteException <: Exception
+    worker::AbstractWorker
+    message::String
+end
+
+function Base.showerror(io::IO, e::RemoteException)
+    print(io, "Remote exception from $(summary(e.worker)):\n\n$(e.message)")
+end
 
 struct WorkerResult
-    should_throw::Bool
+    msg_type::UInt8
     value::Any
 end
 
-unwrap_worker_result(result::WorkerResult) = result.should_throw ? throw(result.value) : result.value
+function unwrap_worker_result(worker::AbstractWorker, result::WorkerResult)
+    if result.msg_type == MsgType.special_serialization_failure
+        throw(ErrorException("Error deserializing data from $(summary(worker)):\n\n$(sprint(Base.showerror, result.value))"))
+    elseif result.msg_type == MsgType.from_worker_call_failure
+        throw(RemoteException(worker, result.value))
+    else
+        result.value
+    end
+end
 
 include("DistributedStdlibWorker.jl")
 
@@ -160,10 +176,7 @@ function _receive_loop(worker::Worker)
 
             c = get(worker.expected_replies, msg_id, nothing)
             if c isa Channel{WorkerResult}
-                put!(c, WorkerResult(
-                    msg_type == MsgType.special_serialization_failure,
-                    msg_data
-                ))
+                put!(c, WorkerResult(msg_type, msg_data))
             else
                 @error "HOST: Received a response, but I didn't ask for anything" msg_type msg_id msg_data
             end
@@ -267,7 +280,7 @@ function _wait_for_response(worker::Worker, msg_id::MsgID)
         @debug("HOST: waiting for response of", msg_id)
         response = take!(c)
         delete!(worker.expected_replies, msg_id)
-        return unwrap_worker_result(response)
+        return unwrap_worker_result(worker, response)
     else
         error("HOST: No response expected for message id $msg_id")
     end
@@ -320,11 +333,23 @@ function remotecall(f, w::Worker, args...; kwargs...)
     )
 end
 function remotecall(f, w::InProcessWorker, args...; kwargs...)
-    w.latest_request_task = @async try
+    w.latest_request_task = @async remotecall_fetch(f, w, args...; kwargs...)
+end
+function remotecall_fetch(f, w::InProcessWorker, args...; kwargs...)
+    try
         f(args...; kwargs...)
     catch ex
-        ex
+        throw(RemoteException(
+            w,
+            sprint() do io
+                Base.invokelatest(showerror, io, ex, catch_backtrace())
+            end
+        ))
     end
+end
+function remotecall_wait(f, w::InProcessWorker, args...; kwargs...)
+    remotecall_fetch(f, w, args...; kwargs...)
+    nothing
 end
 
 """
