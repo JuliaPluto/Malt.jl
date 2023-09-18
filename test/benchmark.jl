@@ -117,6 +117,40 @@ end
 
 
 
+
+@testset "Benchmark channels: $W" for W in (m.DistributedStdlibWorker, m.InProcessWorker, m.Worker)
+    
+    
+    w = W()
+    @test m.isrunning(w) === true
+    
+    
+    
+    p = Distributed.addprocs(1)[1]
+    
+    remote_channel_malt = m.remote_channel(w, quote
+        channel = Channel{Any}(10)
+    end)
+    
+    remote_channel_distributed = Distributed.RemoteChannel(() -> eval(quote
+        channel = Channel{Any}(10)
+    end, p))
+    # local_channel_distributed = Channel{Any}(10)
+    
+    function f1()
+        m.remote_eval_wait(Main, p, :(put!(channel, 123)))
+        take!(remote_channel_distributed)
+    end
+    function f2()
+        Distributed.remotecall_eval(Main, p, :(put!(channel, 123)))
+        take!(remote_channel_distributed)
+    end
+    
+    m.stop(w)
+    Distributed.rmprocs(p; waitfor=30)
+end
+
+
 @testset "Benchmark launch" begin
     function launch_with_malt()
         w = m.Worker()
