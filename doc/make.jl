@@ -4,7 +4,8 @@ using Malt
 makedocs(
     sitename = "Malt",
     format = Documenter.HTML(),
-    modules = [Malt]
+    modules = [Malt],
+    warnonly = [:missing_docs],
 )
 
 # Documenter can also automatically deploy documentation to gh-pages.
