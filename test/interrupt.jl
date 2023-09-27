@@ -1,10 +1,13 @@
-# @testset "Interrupt: $W" for W in (m.DistributedStdlibWorker, m.InProcessWorker, m.Worker)
-@testset "Interrupt: $W" for W in (m.Worker,)
+win = Sys.iswindows()
+
+@testset "Interrupt: $W" for W in (m.DistributedStdlibWorker, m.InProcessWorker, m.Worker)
+# @testset "Interrupt: $W" for W in (m.Worker,)
+    
+    no_interrupt_possible = (Sys.iswindows() && W === m.DistributedStdlibWorker) || W === m.InProcessWorker
 
 
     w = W()
 
-    # m.interrupt(w)
     @test m.isrunning(w)
     @test m.remote_call_fetch(&, w, true, true)
     
@@ -31,7 +34,7 @@
     # expressions in this list can be interrupted with a single Ctrl+C
     # open a terminal and try this.
     # (some expressions like `while true end` need multiple Ctrl+C in short succession to force throw SIGINT)
-    exs = [
+    exs = no_interrupt_possible ? [ex1, ex3] : [
         ex1,
         ex3,
         ex1, # second time because interrupts should be reliable
@@ -54,13 +57,13 @@
             @test !istaskdone(t)
             sleep(.1)
             m.interrupt(w)
-            @test try
+            r = try
                 wait(t)
                 nothing
             catch e
                 e
-            end isa TaskFailedException
-            # @test t.exception isa InterruptException
+            end
+            no_interrupt_possible || @test r isa TaskFailedException
         end
         
         t4 = @elapsed begin
@@ -68,17 +71,17 @@
             @test !istaskdone(t)
             sleep(.1)
             m.interrupt(w)
-            @test try
+            r = try
                 wait(t)
                 nothing
             catch e
                 e
-            end isa TaskFailedException
-            # @test t.exception isa InterruptException
+            end
+            no_interrupt_possible || @test r isa TaskFailedException
         end
         
         @info "test run" ex t1 t2 t3 t4
-        @test t4 < min(t1,t2) * 0.8
+        no_interrupt_possible || @test t4 < min(t1,t2) * 0.8
         
         # still running and responsive
         @test m.isrunning(w)
@@ -86,51 +89,56 @@
         
     end
     
-    function hard_interrupt(w)
-        t = m.remote_call(&, w, true, true)
     
-        done() = !m.isrunning(w) || istaskdone(t)
-        
-        while !done()
-            for _ in 1:5
-                print(" 🔥 ")
-                m.interrupt(w)
-                sleep(0.18)
-                if done()
-                    break
+    if !no_interrupt_possible
+        @testset "hard interrupt" begin
+                    
+            function hard_interrupt(w)
+                t = m.remote_call(&, w, true, true)
+            
+                done() = !m.isrunning(w) || istaskdone(t)
+                
+                while !done()
+                    for _ in 1:5
+                        print(" 🔥 ")
+                        m.interrupt(w)
+                        sleep(0.18)
+                        if done()
+                            break
+                        end
+                    end
+                    sleep(1.5)
                 end
             end
-            sleep(1.5)
-        end
-    end
-    
-    @testset "hard interrupt" begin
-        t = m.remote_eval(w, :(while true end))
-        
-        @test !istaskdone(t)
-        @test m.isrunning(w)
-        
-        hard_interrupt(w)
-        
-        
-        @info "xx" istaskdone(t) m.isrunning(w)
-        
-        @test try
-            wait(t)
-            nothing
-        catch e
-            e
-        end isa TaskFailedException
-        
-        # hello
-        @test true
-        
-        if Sys.iswindows()
-            @info "Interrupt done" m.isrunning(w)
-        else
-            # still running and responsive
+            
+            
+            t = m.remote_eval(w, :(while true end))
+            
+            @test !istaskdone(t)
             @test m.isrunning(w)
-            @test m.remote_call_fetch(&, w, true, true)
+            
+            hard_interrupt(w)
+            
+            
+            @info "xx" istaskdone(t) m.isrunning(w)
+            
+            @test try
+                wait(t)
+                nothing
+            catch e
+                e
+            end isa TaskFailedException
+            
+            # hello
+            @test true
+            
+            if Sys.iswindows()
+                @test m.isrunning(w)
+            else
+                # still running and responsive
+                @test m.isrunning(w)
+                @test m.remote_call_fetch(&, w, true, true)
+            end
         end
     end
     
