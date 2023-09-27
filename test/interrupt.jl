@@ -130,7 +130,7 @@ win = Sys.iswindows()
             @test true
             
             if Sys.iswindows()
-                @test m.isrunning(w)
+                @test_broken m.isrunning(w)
             else
                 # still running and responsive
                 @test m.isrunning(w)

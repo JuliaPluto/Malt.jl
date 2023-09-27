@@ -18,6 +18,7 @@ include("./shared.jl")
 
 
 
+
 abstract type AbstractWorker end
 
 """
@@ -140,6 +141,7 @@ mutable struct Worker <: AbstractWorker
         return w
     end
 end
+
 Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with PID $(w.proc_pid)")
 
 
@@ -163,8 +165,8 @@ end
 
 function _receive_loop(worker::Worker)
     io = worker.current_socket
-
-
+    
+    
     # Here we use:
     # `for _i in Iterators.countfrom(1)`
     # instead of
