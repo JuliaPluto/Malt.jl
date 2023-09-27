@@ -46,8 +46,21 @@
             # @test t.exception isa InterruptException
         end
         
-        @info "test run" t1 t2 t3
-        @test t3 < min(t1,t2) * 0.8
+        t4 = @elapsed begin
+            t = f()
+            @test !istaskdone(t)
+            m.interrupt(w)
+            @test try
+                wait(t)
+                nothing
+            catch e
+                e
+            end isa TaskFailedException
+            # @test t.exception isa InterruptException
+        end
+        
+        @info "test run" t1 t2 t3 t4
+        @test t4 < min(t1,t2) * 0.8
         
         # still running and responsive
         @test m.isrunning(w)
