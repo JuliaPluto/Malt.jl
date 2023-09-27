@@ -44,6 +44,8 @@ end
 function unwrap_worker_result(worker::AbstractWorker, result::WorkerResult)
     if result.msg_type == MsgType.special_serialization_failure
         throw(ErrorException("Error deserializing data from $(summary(worker)):\n\n$(sprint(Base.showerror, result.value))"))
+    elseif result.msg_type == MsgType.special_worker_terminated
+        throw(TerminatedWorkerException())
     elseif result.msg_type == MsgType.from_worker_call_failure
         throw(RemoteException(worker, result.value))
     else
@@ -129,6 +131,7 @@ mutable struct Worker <: AbstractWorker
         )
         atexit(() -> stop(w))
 
+        _exit_loop(w)
         _receive_loop(w)
 
         return w
@@ -138,8 +141,28 @@ end
 Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with PID $(w.proc_pid)")
 
 
+
+function _exit_loop(worker::Worker)
+    @async for _i in Iterators.countfrom(1)
+        try
+            if !isrunning(worker)
+                # the worker got shut down, which means that we will never receive one of the expected_replies. So let's give all of them a special_worker_terminated reply.
+                for c in values(worker.expected_replies)
+                    isready(c) || put!(c, WorkerResult(MsgType.special_worker_terminated, nothing))
+                end
+                break
+            end
+            sleep(1)
+        catch e
+            @error "Unexpection error inside the exit loop" worker exception=(e,catch_backtrace())
+        end
+    end
+end
+
 function _receive_loop(worker::Worker)
     io = worker.current_socket
+    
+    
     # Here we use:
     # `for _i in Iterators.countfrom(1)`
     # instead of

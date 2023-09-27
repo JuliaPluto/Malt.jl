@@ -9,10 +9,28 @@
     @testset "Worker management" begin
         w = W()
         @test m.isrunning(w) === true
+        @test m.remote_call_fetch(&, w, true, true)
 
         W === m.Worker && @test length(m.__iNtErNaL_get_running_procs()) == 1
-        # Terminating workers takes about 0.5s
-        m.stop(w)
+        
+        if W === m.InProcessWorker
+            m.stop(w)
+        else
+            start = time()
+            task = m.remote_call(sleep, w, 10)
+            
+            m.stop(w)
+            
+            @test try
+                wait(task)
+            catch e
+                e
+            end isa TaskFailedException
+            stop = time()
+            @test stop - start < 8
+        end
+        
+        
         @test m.isrunning(w) === false
         W === m.Worker && @test length(m.__iNtErNaL_get_running_procs()) == 0
     end
