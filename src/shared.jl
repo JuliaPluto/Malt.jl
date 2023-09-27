@@ -8,6 +8,7 @@ const MsgType = (
     from_worker_call_failure = UInt8(81),
     ###
     special_serialization_failure = UInt8(100),
+    special_worker_terminated = UInt8(101),
 )
 
 const MsgID = UInt64

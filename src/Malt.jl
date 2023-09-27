@@ -44,6 +44,8 @@ end
 function unwrap_worker_result(worker::AbstractWorker, result::WorkerResult)
     if result.msg_type == MsgType.special_serialization_failure
         throw(ErrorException("Error deserializing data from $(summary(worker)):\n\n$(sprint(Base.showerror, result.value))"))
+    elseif result.msg_type == MsgType.special_worker_terminated
+        throw(TerminatedWorkerException())
     elseif result.msg_type == MsgType.from_worker_call_failure
         throw(RemoteException(worker, result.value))
     else
@@ -132,12 +134,27 @@ Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port)")
 
 function _receive_loop(worker::Worker)
     io = worker.current_socket
+    
+    exit_handler_task = @async for _i in Iterators.countfrom(1)
+        try
+            if !isrunning(worker)
+                for c in values(worker.expected_replies)
+                    isready(c) || put!(c, WorkerResult(MsgType.special_worker_terminated, nothing))
+                end
+                break
+            end
+            sleep(1)
+        catch e
+            @error "asdfdfs" exception=(e,catch_backtrace())
+        end
+    end
+    
     # Here we use:
     # `for _i in Iterators.countfrom(1)`
     # instead of
     # `while true`
     # as a workaround for https://github.com/JuliaLang/julia/issues/37154
-    @async for _i in Iterators.countfrom(1)
+    listen_task = @async for _i in Iterators.countfrom(1)
         try
             if !isopen(io)
                 @debug("HOST: io closed.")
