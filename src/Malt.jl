@@ -673,7 +673,7 @@ function interrupt(w::Worker)
     nothing
 end
 function interrupt(w::InProcessWorker)
-    isdone(w.latest_request_task) || schedule(w.latest_request_task, InterruptException(); error=true)
+    istaskdone(w.latest_request_task) || schedule(w.latest_request_task, InterruptException(); error=true)
     nothing
 end
 
