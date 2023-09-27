@@ -90,6 +90,7 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 mutable struct Worker <: AbstractWorker
     port::UInt16
     proc::Base.Process
+    proc_pid::Int32
 
     current_socket::Sockets.TCPSocket
     # socket_lock::ReentrantLock
@@ -117,7 +118,14 @@ mutable struct Worker <: AbstractWorker
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
-            new(port, proc, socket, MsgID(0), Dict{MsgID,Channel{WorkerResult}}())
+            new(
+                port, 
+                proc, 
+                getpid(proc),
+                socket, 
+                MsgID(0), 
+                Dict{MsgID,Channel{WorkerResult}}(),
+            )
         )
         atexit(() -> stop(w))
 
@@ -127,7 +135,7 @@ mutable struct Worker <: AbstractWorker
     end
 end
 
-Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port)")
+Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with PID $(w.proc_pid)")
 
 
 function _receive_loop(worker::Worker)
