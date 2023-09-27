@@ -156,7 +156,7 @@ mutable struct Worker <: AbstractWorker
         cmd = _get_worker_cmd(; env, exeflags)
         proc = open(Cmd(
             cmd; 
-            detach=Sys.iswindows(),
+            detach=true,
             windows_hide=true,
         ), "w+")
         
