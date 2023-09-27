@@ -129,7 +129,8 @@ win = Sys.iswindows()
             # hello
             @test true
             
-            if Sys.iswindows()
+            if Sys.iswindows() && VERSION < v"1.10.0-beta3"
+                # fixed by https://github.com/JuliaLang/julia/pull/51307 which will probably land in v1.10.0-beta3
                 @test_broken m.isrunning(w)
             else
                 # still running and responsive
