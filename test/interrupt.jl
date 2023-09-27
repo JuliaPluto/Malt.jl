@@ -91,7 +91,13 @@
         
         @test !istaskdone(t)
         @test m.isrunning(w)
-        m.interrupt_auto(w)
+        
+        for _ in 1:5
+            m.interrupt(w)
+            sleep(.18)
+        end
+        
+        
         @info "xx" istaskdone(t) m.isrunning(w)
         
         @test try

@@ -18,58 +18,6 @@ include("./shared.jl")
 
 
 
-
-"""
-```julia
-poll(query::Function, timeout::Real=Inf64, interval::Real=1/20)::Bool
-```
-
-Keep running your function `query()` in intervals until it returns `true`, or until `timeout` seconds have passed.
-
-`poll` returns `true` if `query()` returned `true`. If `timeout` seconds have passed, `poll` returns `false`.
-
-# Example
-```julia
-vals = [1,2,3]
-
-@async for i in 1:5
-    sleep(1)
-    vals[3] = 99
-end
-
-poll(8 #= seconds =#) do
-    vals[3] == 99
-end # returns `true` (after 5 seconds)!
-
-###
-
-@async for i in 1:5
-    sleep(1)
-    vals[3] = 5678
-end
-
-poll(2 #= seconds =#) do
-    vals[3] == 5678
-end # returns `false` (after 2 seconds)!
-```
-"""
-function poll(query::Function, timeout::Real=Inf64, interval::Real=1/20)
-    start = time()
-    while time() < start + timeout
-        if query()
-            return true
-        end
-        sleep(interval)
-    end
-    return false
-end
-
-
-
-
-
-
-
 abstract type AbstractWorker end
 
 """
@@ -676,46 +624,6 @@ function interrupt(w::InProcessWorker)
     istaskdone(w.latest_request_task) || schedule(w.latest_request_task, InterruptException(); error=true)
     nothing
 end
-
-
-function interrupt_auto(w::AbstractWorker; verbose::Bool=true)
-    t = remote_call(&, w, true, true)
-    
-    done() = !isrunning(w) || istaskdone(t)
-    
-    try
-        verbose && @info "Sending interrupt to process $(summary(w))"
-        interrupt(w)
-
-        if poll(() -> done(), 5.0, 5/100)
-            verbose && println("Cell interrupted!")
-            return true
-        end
-
-        verbose && println("Still running... starting sequence")
-        while !done()
-            for _ in 1:5
-                verbose && print(" 🔥 ")
-                interrupt(w)
-                sleep(0.18)
-                if done()
-                    break
-                end
-            end
-            sleep(1.5)
-        end
-        verbose && println()
-        verbose && println("Cell interrupted!")
-        true
-    catch e
-        # if !(e isa KeyError)
-        @warn "Interrupt failed for unknown reason" exception=(e,catch_backtrace())
-        # end
-        false
-    end
-end
-
-
 
 
 # Based on `Base.task_done_hook`
