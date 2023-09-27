@@ -19,6 +19,57 @@ include("./shared.jl")
 
 
 
+"""
+```julia
+poll(query::Function, timeout::Real=Inf64, interval::Real=1/20)::Bool
+```
+
+Keep running your function `query()` in intervals until it returns `true`, or until `timeout` seconds have passed.
+
+`poll` returns `true` if `query()` returned `true`. If `timeout` seconds have passed, `poll` returns `false`.
+
+# Example
+```julia
+vals = [1,2,3]
+
+@async for i in 1:5
+    sleep(1)
+    vals[3] = 99
+end
+
+poll(8 #= seconds =#) do
+    vals[3] == 99
+end # returns `true` (after 5 seconds)!
+
+###
+
+@async for i in 1:5
+    sleep(1)
+    vals[3] = 5678
+end
+
+poll(2 #= seconds =#) do
+    vals[3] == 5678
+end # returns `false` (after 2 seconds)!
+```
+"""
+function poll(query::Function, timeout::Real=Inf64, interval::Real=1/20)
+    start = time()
+    while time() < start + timeout
+        if query()
+            return true
+        end
+        sleep(interval)
+    end
+    return false
+end
+
+
+
+
+
+
+
 abstract type AbstractWorker end
 
 """
@@ -44,6 +95,8 @@ end
 function unwrap_worker_result(worker::AbstractWorker, result::WorkerResult)
     if result.msg_type == MsgType.special_serialization_failure
         throw(ErrorException("Error deserializing data from $(summary(worker)):\n\n$(sprint(Base.showerror, result.value))"))
+    elseif result.msg_type == MsgType.special_worker_terminated
+        throw(TerminatedWorkerException())
     elseif result.msg_type == MsgType.from_worker_call_failure
         throw(RemoteException(worker, result.value))
     else
@@ -90,6 +143,7 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 mutable struct Worker <: AbstractWorker
     port::UInt16
     proc::Base.Process
+    proc_pid::Int32
 
     current_socket::Sockets.TCPSocket
     # socket_lock::ReentrantLock
@@ -100,7 +154,11 @@ mutable struct Worker <: AbstractWorker
     function Worker(; env=String[], exeflags=[])
         # Spawn process
         cmd = _get_worker_cmd(; env, exeflags)
-        proc = open(cmd, "w+")
+        proc = open(Cmd(
+            cmd; 
+            detach=Sys.iswindows(),
+            windows_hide=true,
+        ), "w+")
         
         # Keep internal list
         __iNtErNaL_get_running_procs()
@@ -117,7 +175,14 @@ mutable struct Worker <: AbstractWorker
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
-            new(port, proc, socket, MsgID(0), Dict{MsgID,Channel{WorkerResult}}())
+            new(
+                port, 
+                proc, 
+                getpid(proc),
+                socket, 
+                MsgID(0), 
+                Dict{MsgID,Channel{WorkerResult}}(),
+            )
         )
         atexit(() -> stop(w))
 
@@ -127,17 +192,32 @@ mutable struct Worker <: AbstractWorker
     end
 end
 
-Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port)")
+Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with PID $(w.proc_pid)")
 
 
 function _receive_loop(worker::Worker)
     io = worker.current_socket
+    
+    exit_handler_task = @async for _i in Iterators.countfrom(1)
+        try
+            if !isrunning(worker)
+                for c in values(worker.expected_replies)
+                    isready(c) || put!(c, WorkerResult(MsgType.special_worker_terminated, nothing))
+                end
+                break
+            end
+            sleep(1)
+        catch e
+            @error "asdfdfs" exception=(e,catch_backtrace())
+        end
+    end
+    
     # Here we use:
     # `for _i in Iterators.countfrom(1)`
     # instead of
     # `while true`
     # as a workaround for https://github.com/JuliaLang/julia/issues/37154
-    @async for _i in Iterators.countfrom(1)
+    listen_task = @async for _i in Iterators.countfrom(1)
         try
             if !isopen(io)
                 @debug("HOST: io closed.")
@@ -581,18 +661,58 @@ Send an interrupt signal to the worker process. This will interrupt the
 latest request (`remote_call*` or `remote_eval*`) that was sent to the worker.
 """
 function interrupt(w::Worker)
-    if Sys.iswindows()
-        # TODO: not yet implemented
-        @warn "Malt.interrupt is not yet supported on Windows"
-        # _assert_is_running(w)
-        # _send_msg(w, MsgType.from_host_fake_interrupt, (), false)
-        nothing
+    if !isrunning(w)
+        @warn "Tried to interrupt a worker that has already stopped running." summary(w)
     else
-        Base.kill(w.proc, Base.SIGINT)
+        if Sys.iswindows()
+            ccall((:GenerateConsoleCtrlEvent,"Kernel32"), Bool, (UInt32, UInt32), UInt32(1), UInt32(getpid(w.proc)))
+        else
+            Base.kill(w.proc, Base.SIGINT)
+        end
     end
+    nothing
 end
 function interrupt(w::InProcessWorker)
-    schedule(w.latest_request_task, InterruptException(); error=true)
+    isdone(w.latest_request_task) || schedule(w.latest_request_task, InterruptException(); error=true)
+    nothing
+end
+
+
+function interrupt_auto(w::AbstractWorker; verbose::Bool=true)
+    t = remote_call(&, w, true, true)
+    
+    done() = !isrunning(w) || istaskdone(t)
+    
+    try
+        verbose && @info "Sending interrupt to process $(w)"
+        interrupt(w)
+
+        if poll(() -> done(), 5.0, 5/100)
+            verbose && println("Cell interrupted!")
+            return true
+        end
+
+        verbose && println("Still running... starting sequence")
+        while !done()
+            for _ in 1:5
+                verbose && print(" 🔥 ")
+                interrupt(w)
+                sleep(0.18)
+                if done()
+                    break
+                end
+            end
+            sleep(1.5)
+        end
+        verbose && println()
+        verbose && println("Cell interrupted!")
+        true
+    catch e
+        # if !(e isa KeyError)
+        @warn "Interrupt failed for unknown reason" exception=(e,catch_backtrace())
+        # end
+        false
+    end
 end
 
 
