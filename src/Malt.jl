@@ -134,21 +134,21 @@ mutable struct Worker <: AbstractWorker
         )
         atexit(() -> stop(w))
 
+        _exit_loop(w)
         _receive_loop(w)
 
         return w
     end
 end
-
 Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with PID $(w.proc_pid)")
 
 
-function _receive_loop(worker::Worker)
-    io = worker.current_socket
-    
-    exit_handler_task = @async for _i in Iterators.countfrom(1)
+
+function _exit_loop(worker::Worker)
+    @async for _i in Iterators.countfrom(1)
         try
             if !isrunning(worker)
+                # the worker got shut down, which means that we will never receive one of the expected_replies. So let's give all of them a special_worker_terminated reply.
                 for c in values(worker.expected_replies)
                     isready(c) || put!(c, WorkerResult(MsgType.special_worker_terminated, nothing))
                 end
@@ -156,16 +156,21 @@ function _receive_loop(worker::Worker)
             end
             sleep(1)
         catch e
-            @error "asdfdfs" exception=(e,catch_backtrace())
+            @error "Unexpection error inside the exit loop" worker exception=(e,catch_backtrace())
         end
     end
-    
+end
+
+function _receive_loop(worker::Worker)
+    io = worker.current_socket
+
+
     # Here we use:
     # `for _i in Iterators.countfrom(1)`
     # instead of
     # `while true`
     # as a workaround for https://github.com/JuliaLang/julia/issues/37154
-    listen_task = @async for _i in Iterators.countfrom(1)
+    @async for _i in Iterators.countfrom(1)
         try
             if !isopen(io)
                 @debug("HOST: io closed.")
@@ -610,7 +615,7 @@ latest request (`remote_call*` or `remote_eval*`) that was sent to the worker.
 """
 function interrupt(w::Worker)
     if !isrunning(w)
-        @warn "Tried to interrupt a worker that has already stopped running." summary(w)
+        @warn "Tried to interrupt a worker that has already shut down." summary(w)
     else
         if Sys.iswindows()
             ccall((:GenerateConsoleCtrlEvent,"Kernel32"), Bool, (UInt32, UInt32), UInt32(1), UInt32(getpid(w.proc)))
@@ -624,6 +629,8 @@ function interrupt(w::InProcessWorker)
     istaskdone(w.latest_request_task) || schedule(w.latest_request_task, InterruptException(); error=true)
     nothing
 end
+
+
 
 
 # Based on `Base.task_done_hook`
