@@ -86,16 +86,31 @@
         
     end
     
+    function hard_interrupt(w)
+        t = remote_call(&, w, true, true)
+    
+        done() = !m.isrunning(w) || istaskdone(t)
+        
+        while !done()
+            for _ in 1:5
+                print(" 🔥 ")
+                m.interrupt(w)
+                sleep(0.18)
+                if done()
+                    break
+                end
+            end
+            sleep(1.5)
+        end
+    end
+    
     @testset "hard interrupt" begin
         t = m.remote_eval(w, :(while true end))
         
         @test !istaskdone(t)
         @test m.isrunning(w)
         
-        for _ in 1:5
-            m.interrupt(w)
-            sleep(.18)
-        end
+        hard_interrupt(w)
         
         
         @info "xx" istaskdone(t) m.isrunning(w)
