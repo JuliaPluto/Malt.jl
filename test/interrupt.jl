@@ -87,7 +87,7 @@
     end
     
     function hard_interrupt(w)
-        t = remote_call(&, w, true, true)
+        t = m.remote_call(&, w, true, true)
     
         done() = !m.isrunning(w) || istaskdone(t)
         
