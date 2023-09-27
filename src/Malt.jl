@@ -103,7 +103,11 @@ mutable struct Worker <: AbstractWorker
     function Worker(; env=String[], exeflags=[])
         # Spawn process
         cmd = _get_worker_cmd(; env, exeflags)
-        proc = open(cmd, "w+")
+        proc = open(Cmd(
+            cmd; 
+            detach=true,
+            windows_hide=true,
+        ), "w+")
         
         # Keep internal list
         __iNtErNaL_get_running_procs()
@@ -612,18 +616,20 @@ Send an interrupt signal to the worker process. This will interrupt the
 latest request (`remote_call*` or `remote_eval*`) that was sent to the worker.
 """
 function interrupt(w::Worker)
-    if Sys.iswindows()
-        # TODO: not yet implemented
-        @warn "Malt.interrupt is not yet supported on Windows"
-        # _assert_is_running(w)
-        # _send_msg(w, MsgType.from_host_fake_interrupt, (), false)
-        nothing
+    if !isrunning(w)
+        @warn "Tried to interrupt a worker that has already shut down." summary(w)
     else
-        Base.kill(w.proc, Base.SIGINT)
+        if Sys.iswindows()
+            ccall((:GenerateConsoleCtrlEvent,"Kernel32"), Bool, (UInt32, UInt32), UInt32(1), UInt32(getpid(w.proc)))
+        else
+            Base.kill(w.proc, Base.SIGINT)
+        end
     end
+    nothing
 end
 function interrupt(w::InProcessWorker)
-    schedule(w.latest_request_task, InterruptException(); error=true)
+    istaskdone(w.latest_request_task) || schedule(w.latest_request_task, InterruptException(); error=true)
+    nothing
 end
 
 

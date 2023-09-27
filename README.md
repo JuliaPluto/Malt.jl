@@ -63,6 +63,9 @@ In Distributed, only "process 1 can add or remove workers". Malt.jl does not hav
 ### Process isolation
 Malt.jl worker processes **do not inherit** `ENV` variables, command-line arguments or the Pkg environment from their host.
 
+### Interrupt on Windows
+Malt.jl supports **interrupting a worker process on Windows**, not just on UNIX.
+
 ### Heterogenous computing
 Malt.jl does not have API like `@everywhere` or `Distributed.procs`: Malt is **not the right tool for homogenous computing**.
 
