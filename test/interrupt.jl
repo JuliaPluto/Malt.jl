@@ -11,8 +11,9 @@
     
     ex1 = quote
         local x = 0.0
-        for i in 1:20_000_000
-            x += sqrt(abs(sin(cos(tan(x)))))^(1/i)
+        for i = 1:4000
+            k = [sqrt(abs(sin(cos(tan(x))))) ^ (1 / i) for z in 1:i]
+            x += sum(k)
         end
         x
     end
