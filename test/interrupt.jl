@@ -58,8 +58,7 @@ win = Sys.iswindows()
             sleep(.1)
             m.interrupt(w)
             r = try
-                wait(t)
-                nothing
+                fetch(t)
             catch e
                 e
             end
@@ -72,8 +71,7 @@ win = Sys.iswindows()
             sleep(.1)
             m.interrupt(w)
             r = try
-                wait(t)
-                nothing
+                fetch(t)
             catch e
                 e
             end
@@ -123,8 +121,7 @@ win = Sys.iswindows()
             @info "xx" istaskdone(t) m.isrunning(w)
             
             @test try
-                wait(t)
-                nothing
+                fetch(t)
             catch e
                 e
             end isa TaskFailedException
