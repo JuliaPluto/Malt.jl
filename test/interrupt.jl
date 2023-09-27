@@ -92,9 +92,9 @@ win = Sys.iswindows()
         @testset "hard interrupt" begin
                     
             function hard_interrupt(w)
-                t = m.remote_call(&, w, true, true)
+                finish_task = m.remote_call(&, w, true, true)
             
-                done() = !m.isrunning(w) || istaskdone(t)
+                done() = !m.isrunning(w) || istaskdone(finish_task)
                 
                 while !done()
                     for _ in 1:5
