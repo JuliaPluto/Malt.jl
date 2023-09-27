@@ -36,6 +36,7 @@
         t3 = @elapsed begin
             t = f()
             @test !istaskdone(t)
+            sleep(.1)
             m.interrupt(w)
             @test try
                 wait(t)
@@ -49,6 +50,7 @@
         t4 = @elapsed begin
             t = f()
             @test !istaskdone(t)
+            sleep(.1)
             m.interrupt(w)
             @test try
                 wait(t)
