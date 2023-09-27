@@ -78,8 +78,9 @@ The original exception object is only available to the worker. In Distributed, t
 
 Development of Malt.jl is sponsored by:
 
+
 | | |
 |----|----|
-| <a href="https://juliahub.com/"><img title="JuliaHub" src="https://github.com/fonsp/Pluto.jl/assets/6933510/42496111-6831-4519-a399-d5c1e28e5241" width=200 alt="JuliaHub logo"></a> | [**JuliaHub**](https://juliahub.com) enables the creation and editing of Pluto notebooks *on the cloud*! |
+| <a href="https://juliahub.com/"><img title="JuliaHub" src="https://i.imgur.com/IGdcVt7.png" width=200 alt="JuliaHub logo"></a> | [**JuliaHub**](https://juliahub.com) enables the creation and editing of Pluto notebooks *on the cloud*! |
 | <a href="https://summerofcode.withgoogle.com/"><img title="Google Summer of Code" src="https://summerofcode.withgoogle.com/assets/media/logo.svg" width=200 alt="Google Summer of Code logo"></a> | [**Google Summer of Code 2022**](https://summerofcode.withgoogle.com/) allowed [Sergio A. Vargas](https://github.com/savq) to join us for a summer to develop Malt.jl! More details [here](https://github.com/savq/gsoc-2022). |
 
