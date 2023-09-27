@@ -684,7 +684,7 @@ function interrupt_auto(w::AbstractWorker; verbose::Bool=true)
     done() = !isrunning(w) || istaskdone(t)
     
     try
-        verbose && @info "Sending interrupt to process $(w)"
+        verbose && @info "Sending interrupt to process $(summary(w))"
         interrupt(w)
 
         if poll(() -> done(), 5.0, 5/100)

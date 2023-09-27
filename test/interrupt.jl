@@ -16,15 +16,31 @@
             x += sum(k)
         end
         x
-    end
+    end |> Base.remove_linenums!
     
+    ex2 = quote
+        local x = 0.0
+        for i in 1:20_000_000
+            x += sqrt(abs(sin(cos(tan(x)))))^(1/i)
+        end
+        x
+    end |> Base.remove_linenums!
+    
+    ex3 = :(sleep(3)) |> Base.remove_linenums!
+    
+    # expressions in this list can be interrupted with a single Ctrl+C
+    # open a terminal and try this.
+    # (some expressions like `while true end` need multiple Ctrl+C in short succession to force throw SIGINT)
     exs = [
         ex1,
-        quote
-            sleep(3)
-        end,
+        ex3,
         ex1, # second time because interrupts should be reliable
+        (
+            VERSION > v"1.10.0-0" ? [ex2, ex2] : []
+        )...,
     ]
+    
+    
 
     @testset "single interrupt $ex" for ex in exs
         
@@ -32,7 +48,6 @@
         
         t1 = @elapsed wait(f())
         t2 = @elapsed wait(f())
-        @info "first run" t1 t2
         
         t3 = @elapsed begin
             t = f()
@@ -62,7 +77,7 @@
             # @test t.exception isa InterruptException
         end
         
-        @info "test run" t1 t2 t3 t4
+        @info "test run" ex t1 t2 t3 t4
         @test t4 < min(t1,t2) * 0.8
         
         # still running and responsive
