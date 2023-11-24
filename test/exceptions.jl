@@ -13,6 +13,9 @@ macro catcherror(ex)
     end
 end
 
+# To test serialization
+struct LocalStruct end
+
 # @testset "Exceptions" begin
 @testset "Exceptions: $W" for W in (
         m.DistributedStdlibWorker, 
@@ -130,6 +133,12 @@ end
             m.worker_channel(w, :(sqrt(-1)))
         )
         @test m.remote_call_fetch(&, w, true, true)
+    end
+
+    W === m.Worker && @testset "Serialization error" begin
+        @test_throws m.RemoteException m.remote_eval_fetch(w, quote
+            $(LocalStruct)()
+        end)
     end
 
     # The worker should be able to handle all that throwing
