@@ -75,9 +75,9 @@ function serve(server::Sockets.TCPServer)
         msg_id = read(io, MsgID)
         
         msg_data, success = try
-            deserialize(io), true
+            (deserialize(io), true)
         catch err
-            err, false
+            (format_error(err, catch_backtrace()), false)
         finally
             _discard_until_boundary(io)
         end
@@ -116,16 +116,14 @@ function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id
     f, args, kwargs, respond_with_nothing = msg
 
     @async begin
-        success, result = try
+        result, success = try
             result = f(args...; kwargs...)
 
             # @debug("WORKER: Evaluated result", result)
-            (true, respond_with_nothing ? nothing : result)
-        catch e
+            (respond_with_nothing ? nothing : result, true)
+        catch err
             # @debug("WORKER: Got exception!", e)
-            (false, sprint() do io
-                Base.invokelatest(showerror, io, e, catch_backtrace())
-            end)
+            (format_error(err, catch_backtrace()), false)
         end
 
         _serialize_msg(
@@ -158,9 +156,12 @@ function handle(::Val{MsgType.special_serialization_failure}, socket, msg, msg_i
     )
 end
 
+format_error(err, bt) = sprint() do io
+    Base.invokelatest(showerror, io, err, bt)
+end
+
 const _channel_cache = Dict{UInt64, AbstractChannel}()
 
 if abspath(PROGRAM_FILE) == @__FILE__
     main()
 end
-
