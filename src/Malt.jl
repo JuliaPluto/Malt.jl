@@ -554,7 +554,7 @@ _assert_is_running(w::Worker) = isrunning(w) || throw(TerminatedWorkerException(
 
 Terminate the worker process `w` in the nicest possible way. We first try using `Base.exit`, then SIGTERM, then SIGKILL. Waits for the worker process to be terminated.
 
-If `w` is still alive, and now terinated, `stop` returns true.
+If `w` is still alive, and now terminated, `stop` returns true.
 If `w` is already dead, `stop` returns `false`.
 If `w` failed to terminate, throw an exception.
 """
