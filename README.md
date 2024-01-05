@@ -74,6 +74,17 @@ Exceptions in Malt.jl workers are converted to plaintext before being rethrown i
 
 The original exception object is only available to the worker. In Distributed, the original exception object is serialized and rethrown to the host.
 
+### Faster launch
+Malt.jl launches workers >50% faster.
+
+```
+julia> @time Distributed.addprocs(1);
+  2.064801 seconds (11.63 k allocations: 1.093 MiB, 1.08% compilation time)
+
+julia> @time Malt.Worker();
+  0.964955 seconds (537 allocations: 308.734 KiB)
+```
+
 # Sponsors
 
 Development of Malt.jl is sponsored by:
