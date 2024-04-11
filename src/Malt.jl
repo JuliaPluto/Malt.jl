@@ -85,7 +85,7 @@ Create a new `Worker`. A `Worker` struct is a handle to a (separate) Julia proce
 # Examples
 
 ```julia-repl
-julia> w = Malt.worker()
+julia> w = Malt.Worker()
 Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 ```
 """
