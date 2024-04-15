@@ -115,7 +115,7 @@ interrupt(::Nothing) = nothing
 function handle(::Val{MsgType.from_host_call_with_response}, socket, msg, msg_id::MsgID)
     f, args, kwargs, respond_with_nothing = msg
 
-    @async begin
+    Threads.@spawn begin
         result, success = try
             result = f(args...; kwargs...)
 
@@ -139,7 +139,7 @@ end
 function handle(::Val{MsgType.from_host_call_without_response}, socket, msg, msg_id::MsgID)
     f, args, kwargs, _ignored = msg
 
-    @async try
+    Threads.@spawn try
         f(args...; kwargs...)
     catch e
         @warn("WORKER: Got exception while running call without response", exception=(e, catch_backtrace()))
