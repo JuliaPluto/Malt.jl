@@ -66,8 +66,8 @@ Malt.jl worker processes **do not inherit** `ENV` variables, command-line argume
 ### Interrupt on Windows
 Malt.jl supports **interrupting a worker process on Windows**, not just on UNIX.
 
-### Heterogenous computing
-Malt.jl does not have API like `@everywhere` or `Distributed.procs`: Malt is **not the right tool for heterogenous computing**.
+### Homogenous computing
+Malt.jl does not have API like `@everywhere` or `Distributed.procs`: Malt is **not the right tool for homogenous computing**.
 
 ### Exception handling
 Exceptions in Malt.jl workers are converted to plaintext before being rethrown in the host. 
