@@ -135,7 +135,7 @@ mutable struct Worker <: AbstractWorker
         )
         atexit(() -> stop(w))
 
-        _exit_loop(w)
+        _detect_worker_exit_loop(w)
         _receive_loop(w)
 
         return w
@@ -146,8 +146,8 @@ Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with 
 
 
 
-function _exit_loop(worker::Worker)
-    @async for _i in Iterators.countfrom(1)
+function _detect_worker_exit_loop(worker::Worker)
+    @async while true
         try
             if !isrunning(worker)
                 # the worker got shut down, which means that we will never receive one of the expected_replies. So let's give all of them a special_worker_terminated reply.
@@ -158,7 +158,12 @@ function _exit_loop(worker::Worker)
             end
             sleep(1)
         catch e
-            @error "Unexpection error inside the exit loop" worker exception=(e,catch_backtrace())
+            if e isa InterruptException
+                @debug("HOST: Caught interrupt while waiting for worker exit, rethrowing to REPL...")
+                _rethrow_to_repl(e; rethrow_regular=false)
+            else
+                @error "Unexpection error inside the exit loop" worker exception=(e,catch_backtrace())
+            end
         end
     end
 end
