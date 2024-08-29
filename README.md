@@ -85,6 +85,10 @@ julia> @time Malt.Worker();
   0.964955 seconds (537 allocations: 308.734 KiB)
 ```
 
+### Limitations
+
+In contrast to Distributed.jl, Malt.jl currently does not support launching workers on another machine (e.g. SSH remote workers).
+
 # Sponsors
 
 Development of Malt.jl is sponsored by:
