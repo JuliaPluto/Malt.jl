@@ -75,7 +75,7 @@ function serve(server::Sockets.TCPServer)
         msg_id = read(io, MsgID)
         
         msg_data, success = try
-            (invokelatest(deserialize, io), true)
+            (Base.invokelatest(deserialize, io), true)
         catch err
             (format_error(err, catch_backtrace()), false)
         finally
