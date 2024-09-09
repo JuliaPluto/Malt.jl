@@ -38,7 +38,7 @@ function _serialize_msg(io::IO, msg_type::UInt8, msg_id::MsgID, msg_data::Any)
     try
         write(io, msg_type)
         write(io, msg_id)
-        serialize(io, msg_data)
+        Base.invokelatest(serialize, io, msg_data)
         write(io, MSG_BOUNDARY)
         flush(io)
     finally
