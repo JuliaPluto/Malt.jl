@@ -103,11 +103,18 @@ mutable struct Worker <: AbstractWorker
     function Worker(; env=String[], exeflags=[])
         # Spawn process
         cmd = _get_worker_cmd(; env, exeflags)
-        proc = open(Cmd(
-            cmd; 
-            detach=true,
-            windows_hide=true,
-        ), "w+")
+        err = Pipe()
+        proc = open(
+            pipeline(
+                Cmd(
+                    cmd; 
+                    detach=true,
+                    windows_hide=true,
+                ),
+                stderr = err
+            ),
+            "w+"
+        )
         
         # Keep internal list
         __iNtErNaL_get_running_procs()
@@ -115,7 +122,14 @@ mutable struct Worker <: AbstractWorker
 
         # Block until reading the port number of the process (from its stdout)
         port_str = readline(proc)
-        port = parse(UInt16, port_str)
+        port = tryparse(UInt16, port_str)
+        if port === nothing
+            Base.kill(proc, Base.SIGTERM)
+            close(err.in)
+            err_t = Threads.@spawn read(err, String)
+            err_output = fetch(err_t)
+            error("""Failed to start worker process correctly. Expected to read port from stdout, got "$port_str" instead. Stderr output was:\n$err_output""")
+        end
 
         # Connect
         socket = Sockets.connect(port)

@@ -147,3 +147,8 @@ struct LocalStruct end
     m.stop(w)
     @test !m.isrunning(w)
 end
+
+@testset "Failure to spin up Worker" begin
+    e = @catcherror Malt.Worker(; exeflags = ["-t invalid"])
+    @test occursin("ERROR: julia: -t", e.msg)
+end
