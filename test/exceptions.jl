@@ -149,6 +149,6 @@ struct LocalStruct end
 end
 
 @testset "Failure to spin up Worker" begin
-    e = @catcherror Malt.Worker(; exeflags = ["-t invalid"])
+    e = @catcherror m.Worker(; exeflags = ["-t invalid"])
     @test occursin("ERROR: julia: -t", e.msg)
 end
