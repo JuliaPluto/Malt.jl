@@ -163,7 +163,7 @@ end
 const _channel_cache = Dict{UInt64, AbstractChannel}()
 const _gc_event = Base.Event()
 
-const _gc_task = Threads.@spawn :default begin
+const _gc_task = Threads.@spawn begin
     for _i in Iterators.countfrom(1)
         wait(_gc_event)
         sleep(5) # throttle by 5 seconds, so the computation can finish
