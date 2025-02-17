@@ -161,7 +161,13 @@ format_error(err, bt) = sprint() do io
 end
 
 const _channel_cache = Dict{UInt64, AbstractChannel}()
-const _gc_event = Threads.Event(true)
+const _gc_event = @static if isdefined(Threads, :Event)
+    Threads.Event(true)
+elseif VERSION >= v"1.8.0"
+    Base.Event(true)
+else
+    Base.Event()
+end
 
 const _gc_task = Threads.@spawn :default begin
     for _i in Iterators.countfrom(1)
