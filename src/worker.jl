@@ -166,8 +166,11 @@ const _gc_event = Threads.Event(true)
 const _gc_task = Threads.@spawn :default begin
     for _i in Iterators.countfrom(1)
         wait(_gc_event)
-        sleep(5) # debounce 5 seconds
-        GC.gc(true)
+        sleep(5) # throttle by 5 seconds, so the computation can finish
+        bytes1 = Base.gc_live_bytes()
+        Base.GC.gc(true)
+        bytes2 = Base.gc_live_bytes()
+        @debug "WORKER: gc retrieved $(round((bytes1-bytes2)/1024/1024))MB"
         # ignore all events after the gc
         @atomic _gc_event.set = false
     end
