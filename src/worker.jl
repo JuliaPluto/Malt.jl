@@ -161,6 +161,17 @@ format_error(err, bt) = sprint() do io
 end
 
 const _channel_cache = Dict{UInt64, AbstractChannel}()
+const _gc_event = Threads.Event(true)
+
+const _gc_task = Threads.@spawn :default begin
+    for _i in Iterators.countfrom(1)
+        wait(_gc_event)
+        sleep(5) # debounce 5 seconds
+        GC.gc(true)
+        # ignore all events after the gc
+        @atomic _gc_event.set = false
+    end
+end
 
 if abspath(PROGRAM_FILE) == @__FILE__
     main()

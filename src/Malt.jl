@@ -632,7 +632,18 @@ function interrupt(w::InProcessWorker)
     nothing
 end
 
+"""
+    Malt.requestgc(w::Worker)
 
+Request a garbage collection on the worker `w`. This is a non-blocking call (on the worker).
+"""
+function requestgc(w::Worker)
+    if !isrunning(w)
+        @warn "Tried to gc a worker that has already shut down." summary(w)
+    else
+        remote_eval_wait(Main, w, :(Base.notify(Main._gc_event)))
+    end
+end
 
 
 # Based on `Base.task_done_hook`
