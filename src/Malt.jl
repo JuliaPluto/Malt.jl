@@ -104,11 +104,11 @@ mutable struct Worker <: AbstractWorker
         # Spawn process
         cmd = _get_worker_cmd(; env, exeflags)
         proc = open(Cmd(
-            cmd; 
-            detach=true,
-            windows_hide=true,
-        ), "w+")
-        
+                cmd;
+                detach=true,
+                windows_hide=true,
+            ), "w+")
+
         # Keep internal list
         __iNtErNaL_get_running_procs()
         push!(__iNtErNaL_running_procs, proc)
@@ -125,11 +125,11 @@ mutable struct Worker <: AbstractWorker
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
             new(
-                port, 
-                proc, 
+                port,
+                proc,
                 getpid(proc),
-                socket, 
-                MsgID(0), 
+                socket,
+                MsgID(0),
                 Dict{MsgID,Channel{WorkerResult}}(),
             )
         )
@@ -158,15 +158,15 @@ function _exit_loop(worker::Worker)
             end
             sleep(1)
         catch e
-            @error "Unexpection error inside the exit loop" worker exception=(e,catch_backtrace())
+            @error "Unexpection error inside the exit loop" worker exception = (e, catch_backtrace())
         end
     end
 end
 
 function _receive_loop(worker::Worker)
     io = worker.current_socket
-    
-    
+
+
     # Here we use:
     # `for _i in Iterators.countfrom(1)`
     # instead of
@@ -620,7 +620,7 @@ function interrupt(w::Worker)
         @warn "Tried to interrupt a worker that has already shut down." summary(w)
     else
         if Sys.iswindows()
-            ccall((:GenerateConsoleCtrlEvent,"Kernel32"), Bool, (UInt32, UInt32), UInt32(1), UInt32(getpid(w.proc)))
+            ccall((:GenerateConsoleCtrlEvent, "Kernel32"), Bool, (UInt32, UInt32), UInt32(1), UInt32(getpid(w.proc)))
         else
             Base.kill(w.proc, Base.SIGINT)
         end
@@ -642,6 +642,19 @@ function requestgc(w::Worker)
         @warn "Tried to gc a worker that has already shut down." summary(w)
     else
         remote_eval_wait(Main, w, :(Base.notify(Main._gc_event)))
+    end
+end
+
+"""
+    Malt.autogc(w::Worker)
+
+Initiate the worker auto gc every `ENV["MALT_AUTO_GC_SECONDS"]` or 900 seconds. 
+"""
+function autogc(w::Worker)
+    if !isrunning(w)
+        @warn "Tried to gc a worker that has already shut down." summary(w)
+    else
+        remote_eval_wait(Main, w, :(Base.notify(Main._gc_auto_event)))
     end
 end
 

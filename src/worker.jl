@@ -73,7 +73,7 @@ function serve(server::Sockets.TCPServer)
         end
         # this next line can't fail
         msg_id = read(io, MsgID)
-        
+
         msg_data, success = try
             (Base.invokelatest(deserialize, io), true)
         catch err
@@ -81,7 +81,7 @@ function serve(server::Sockets.TCPServer)
         finally
             _discard_until_boundary(io)
         end
-        
+
         if !success
             if msg_type === MsgType.from_host_call_with_response
                 msg_type = MsgType.special_serialization_failure
@@ -89,7 +89,7 @@ function serve(server::Sockets.TCPServer)
                 continue
             end
         end
-        
+
         try
             @debug("WORKER: Received message", msg_data)
             handle(Val(msg_type), io, msg_data, msg_id)
@@ -142,7 +142,7 @@ function handle(::Val{MsgType.from_host_call_without_response}, socket, msg, msg
     @async try
         f(args...; kwargs...)
     catch e
-        @warn("WORKER: Got exception while running call without response", exception=(e, catch_backtrace()))
+        @warn("WORKER: Got exception while running call without response", exception = (e, catch_backtrace()))
         # TODO: exception is ignored, is that what we want here?
     end
 end
@@ -156,13 +156,13 @@ function handle(::Val{MsgType.special_serialization_failure}, socket, msg, msg_i
     )
 end
 
-format_error(err, bt) = sprint() do io
-    Base.invokelatest(showerror, io, err, bt)
-end
+format_error(err, bt) =
+    sprint() do io
+        Base.invokelatest(showerror, io, err, bt)
+    end
 
-const _channel_cache = Dict{UInt64, AbstractChannel}()
+const _channel_cache = Dict{UInt64,AbstractChannel}()
 const _gc_event = Base.Event()
-
 const _gc_task = Threads.@spawn begin
     for _i in Iterators.countfrom(1)
         wait(_gc_event)
@@ -173,6 +173,21 @@ const _gc_task = Threads.@spawn begin
         @debug "WORKER: gc retrieved $(round((bytes1-bytes2)/1024/1024))MB"
         # ignore all events after the gc
         @atomic _gc_event.set = false
+    end
+end
+
+const _auto_gc_event = Base.Event()
+const _auto_gc_task = Threads.@spawn begin
+    # Notifying will activate the loop. Otherwise this task will just wait forever.
+    wait(_auto_gc_event)
+    for _i in Iterators.countfrom(1)
+        !_auto_gc_event.set && break
+        get(ENV, "MALT_AUTO_GC_SECONDS", "900") |> x -> parse(Int, x) |> sleep
+        bytes1 = Base.gc_live_bytes()
+        Base.GC.gc(true)
+        bytes2 = Base.gc_live_bytes()
+        @debug "WORKER: auto gc retrieved $(round((bytes1-bytes2)/1024/1024))MB"
+        # ignore all events after the gc
     end
 end
 
