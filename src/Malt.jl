@@ -8,8 +8,11 @@ module Malt
 # using Logging: Logging, @debug
 using Serialization: serialize, deserialize
 using Sockets: Sockets
+using Compat
 
 using RelocatableFolders: RelocatableFolders
+
+@compat public remote_call, remote_call_fetch, remote_call_wait, remote_do, remote_eval, remote_eval_fetch, remote_eval_wait, worker_channel, isrunning, stop, interrupt
 
 include("./shared.jl")
 
@@ -104,11 +107,11 @@ mutable struct Worker <: AbstractWorker
         # Spawn process
         cmd = _get_worker_cmd(; env, exeflags)
         proc = open(Cmd(
-            cmd; 
-            detach=true,
-            windows_hide=true,
-        ), "w+")
-        
+                cmd;
+                detach=true,
+                windows_hide=true,
+            ), "w+")
+
         # Keep internal list
         __iNtErNaL_get_running_procs()
         push!(__iNtErNaL_running_procs, proc)
@@ -125,11 +128,11 @@ mutable struct Worker <: AbstractWorker
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
             new(
-                port, 
-                proc, 
+                port,
+                proc,
                 getpid(proc),
-                socket, 
-                MsgID(0), 
+                socket,
+                MsgID(0),
                 Dict{MsgID,Channel{WorkerResult}}(),
             )
         )
@@ -158,15 +161,15 @@ function _exit_loop(worker::Worker)
             end
             sleep(1)
         catch e
-            @error "Unexpection error inside the exit loop" worker exception=(e,catch_backtrace())
+            @error "Unexpection error inside the exit loop" worker exception = (e, catch_backtrace())
         end
     end
 end
 
 function _receive_loop(worker::Worker)
     io = worker.current_socket
-    
-    
+
+
     # Here we use:
     # `for _i in Iterators.countfrom(1)`
     # instead of
@@ -366,6 +369,10 @@ julia> promise = Malt.remote_call(uppercase ∘ *, w, "I ", "declare ", "bankrup
 julia> fetch(promise)
 "I DECLARE BANKRUPTCY!"
 ```
+
+# Notes
+- Use `Base.fetch` to retrieve the result of the computation.
+- If the worker encounters an exception, it will be rethrown when `fetch` is called.
 """
 function remote_call(f, w::Worker, args...; kwargs...)
     _send_receive_async(
@@ -620,7 +627,7 @@ function interrupt(w::Worker)
         @warn "Tried to interrupt a worker that has already shut down." summary(w)
     else
         if Sys.iswindows()
-            ccall((:GenerateConsoleCtrlEvent,"Kernel32"), Bool, (UInt32, UInt32), UInt32(1), UInt32(getpid(w.proc)))
+            ccall((:GenerateConsoleCtrlEvent, "Kernel32"), Bool, (UInt32, UInt32), UInt32(1), UInt32(getpid(w.proc)))
         else
             Base.kill(w.proc, Base.SIGINT)
         end
