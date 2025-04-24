@@ -78,7 +78,7 @@ const __iNtErNaL_running_procs = Set{Pair{String,Base.Process}}()
 __iNtErNaL_get_running_procs() = filter!(Base.process_running ∘ last, __iNtErNaL_running_procs)
 
 """
-    Malt.Worker()
+    Malt.Worker(; env=String[], exeflags=[], process_debug_label::String="")
 
 Create a new `Worker`. A `Worker` struct is a handle to a (separate) Julia process.
 
@@ -88,6 +88,11 @@ Create a new `Worker`. A `Worker` struct is a handle to a (separate) Julia proce
 julia> w = Malt.Worker()
 Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 ```
+
+# Kwargs
+- `env::String[]`: Environment variables to set in the worker process.
+- `exeflags::String[]`: Command line flags to pass to the worker process.
+- `process_debug_label::String`: A label to identify the worker process. This is visible when using [`__iNtErNaL_get_running_procs`](@ref).
 """
 mutable struct Worker <: AbstractWorker
     port::UInt16
