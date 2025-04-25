@@ -6,9 +6,9 @@ const Distributed_expr = quote
 end
 
 """
-    Malt.DistributedStdlibWorker()
+    Malt.DistributedStdlibWorker(; env=String[], exeflags=[])
 
-This implements the same functions as `Malt.Worker` but it uses the Distributed stdlib as a backend. Can be used for backwards compatibility.
+This implements the same functions as `Malt.Worker` but it uses the Distributed stdlib as a backend. Can be used for backwards compatibility. The `env` and `exeflags` are passed on to `Distributed.addprocs`.
 """
 mutable struct DistributedStdlibWorker <: AbstractWorker
     pid::Int64
@@ -40,15 +40,17 @@ Base.summary(io::IO, w::DistributedStdlibWorker) = write(io, "Malt.DistributedSt
 
 
 macro transform_exception(worker, ex)
-    :(try
-        $(esc(ex))
-    catch e
-        if e isa Distributed.RemoteException
-            throw($(RemoteException)($(esc(worker)), sprint(showerror, e.captured)))
-        else
-            rethrow(e)
+    :(
+        try
+            $(esc(ex))
+        catch e
+            if e isa Distributed.RemoteException
+                throw($(RemoteException)($(esc(worker)), sprint(showerror, e.captured)))
+            else
+                rethrow(e)
+            end
         end
-    end)
+    )
 end
 
 function remote_call(f, w::DistributedStdlibWorker, args...; kwargs...)

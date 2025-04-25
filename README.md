@@ -85,9 +85,21 @@ julia> @time Malt.Worker();
   0.964955 seconds (537 allocations: 308.734 KiB)
 ```
 
+Performance of `Malt.remote_eval` is similar to `Distributed.remote_call`. We have automatic performance testing in place to ensure this.
+
 ### Limitations
 
 In contrast to Distributed.jl, Malt.jl currently does not support launching workers on another machine (e.g. SSH remote workers).
+
+## Worker Types
+
+Malt.jl provides different types of workers to suit various use cases:
+
+- **`Malt.InProcessWorker`**: Runs in the same Julia process as the host. Useful for debugging or when process isolation is not required. Lightweight and avoids the overhead of launching a separate process.
+- **`Malt.DistributedStdlibWorker`**: Uses Julia's `Distributed` standard library under the hood, allowing compatibility with Malt's API while leveraging `Distributed` features.
+- **`Malt.Worker`**: The default worker type that creates a new Julia process with full process isolation. Ideal for scenarios requiring sandboxing.
+
+It is also possible to extend the `Malt.AbstractWorker` interface to create custom worker types. (E.g. `InterpretedWorker`, `WASMWorker`, `DockerWorker`, etc.)
 
 # Sponsors
 
