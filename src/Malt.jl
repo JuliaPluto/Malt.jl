@@ -74,11 +74,11 @@ end
 
 Base.summary(io::IO, w::InProcessWorker) = write(io, "Malt.InProcessWorker in module $(w.host_module)")
 
-const __iNtErNaL_running_procs = Set{Base.Process}()
-__iNtErNaL_get_running_procs() = filter!(Base.process_running, __iNtErNaL_running_procs)
+const __iNtErNaL_running_procs = Set{Pair{String,Base.Process}}()
+__iNtErNaL_get_running_procs() = filter!(Base.process_running ∘ last, __iNtErNaL_running_procs)
 
 """
-    Malt.Worker()
+    Malt.Worker(; env=String[], exeflags=[], process_debug_label::String="")
 
 Create a new `Worker`. A `Worker` struct is a handle to a (separate) Julia process.
 
@@ -88,6 +88,11 @@ Create a new `Worker`. A `Worker` struct is a handle to a (separate) Julia proce
 julia> w = Malt.Worker()
 Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 ```
+
+# Kwargs
+- `env::String[]`: Environment variables to set in the worker process.
+- `exeflags::String[]`: Command line flags to pass to the worker process.
+- `process_debug_label::String`: A label to identify the worker process. This is visible when using [`__iNtErNaL_get_running_procs`](@ref).
 """
 mutable struct Worker <: AbstractWorker
     port::UInt16
@@ -100,7 +105,7 @@ mutable struct Worker <: AbstractWorker
     current_message_id::MsgID
     expected_replies::Dict{MsgID,Channel{WorkerResult}}
 
-    function Worker(; env=String[], exeflags=[])
+    function Worker(; env=String[], exeflags=[], process_debug_label::String="")
         # Spawn process
         cmd = _get_worker_cmd(; env, exeflags)
         proc = open(Cmd(
@@ -111,7 +116,7 @@ mutable struct Worker <: AbstractWorker
         
         # Keep internal list
         __iNtErNaL_get_running_procs()
-        push!(__iNtErNaL_running_procs, proc)
+        push!(__iNtErNaL_running_procs, process_debug_label => proc)
 
         # Block until reading the port number of the process (from its stdout)
         port_str = readline(proc)
