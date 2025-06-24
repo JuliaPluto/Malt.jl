@@ -158,7 +158,7 @@ function _exit_loop(worker::Worker)
             end
             sleep(1)
         catch e
-            @error "Unexpection error inside the exit loop" worker exception=(e,catch_backtrace())
+            @error "Unexpected error encountered in the exit loop" worker exception=(e,catch_backtrace())
         end
     end
 end
