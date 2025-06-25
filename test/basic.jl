@@ -128,7 +128,7 @@
         
         
         
-        t = @async begin
+        t = Threads.@spawn begin
             for i in 1:2*channel_size
                 @test take!(lc) == i
             end
