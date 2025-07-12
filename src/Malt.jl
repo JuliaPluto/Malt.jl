@@ -100,21 +100,28 @@ mutable struct Worker <: AbstractWorker
     current_message_id::MsgID
     expected_replies::Dict{MsgID,Channel{WorkerResult}}
 
+    stdout::Pipe
+    stderr::Pipe
     function Worker(; env=String[], exeflags=[])
         # Spawn process
         cmd = _get_worker_cmd(; env, exeflags)
-        proc = open(Cmd(
-            cmd; 
-            detach=true,
-            windows_hide=true,
-        ), "w+")
-        
+        _stdout = Pipe()
+        _stderr = Pipe()
+        proc = run(
+            pipeline(Cmd(
+                    cmd;
+                    detach=true,
+                    windows_hide=true,
+                ), stdout=_stdout, stderr=_stderr),
+            wait=false,
+        )
+
         # Keep internal list
         __iNtErNaL_get_running_procs()
         push!(__iNtErNaL_running_procs, proc)
 
         # Block until reading the port number of the process (from its stdout)
-        port_str = readline(proc)
+        port_str = readline(_stdout)
         port = parse(UInt16, port_str)
 
         # Connect
@@ -125,16 +132,18 @@ mutable struct Worker <: AbstractWorker
         # There's no reason to keep the worker process alive after the manager loses its handle.
         w = finalizer(w -> @async(stop(w)),
             new(
-                port, 
-                proc, 
+                port,
+                proc,
                 getpid(proc),
-                socket, 
-                MsgID(0), 
+                socket,
+                MsgID(0),
                 Dict{MsgID,Channel{WorkerResult}}(),
+                _stdout,
+                _stderr
             )
         )
         atexit(() -> stop(w))
-
+        _stdio_loop(w)
         _exit_loop(w)
         _receive_loop(w)
 
@@ -144,7 +153,28 @@ end
 
 Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with PID $(w.proc_pid)")
 
-
+function _stdio_loop(worker::Worker)
+    @async for _i in Iterators.countfrom(1)
+        try
+            bytes = readline(worker.stdout)
+            write(stdout, "\n[Worker🔹 $(worker.port)]: ")
+            write(stdout, bytes)
+            write(stderr, '\n')
+            flush(stdout)
+        catch
+        end
+    end
+    @async for _i in Iterators.countfrom(1)
+        try
+            bytes = readline(worker.stderr)
+            write(stderr, "[Worker 🔴 $(worker.port)]: ")
+            write(stderr, bytes)
+            write(stderr, '\n')
+            flush(stderr)
+        catch
+        end
+    end
+end
 
 function _exit_loop(worker::Worker)
     @async for _i in Iterators.countfrom(1)
@@ -158,15 +188,15 @@ function _exit_loop(worker::Worker)
             end
             sleep(1)
         catch e
-            @error "Unexpected error encountered in the exit loop" worker exception=(e,catch_backtrace())
+            @error "Unexpected error encountered in the exit loop" worker exception = (e, catch_backtrace())
         end
     end
 end
 
 function _receive_loop(worker::Worker)
     io = worker.current_socket
-    
-    
+
+
     # Here we use:
     # `for _i in Iterators.countfrom(1)`
     # instead of
@@ -620,7 +650,7 @@ function interrupt(w::Worker)
         @warn "Tried to interrupt a worker that has already shut down." summary(w)
     else
         if Sys.iswindows()
-            ccall((:GenerateConsoleCtrlEvent,"Kernel32"), Bool, (UInt32, UInt32), UInt32(1), UInt32(getpid(w.proc)))
+            ccall((:GenerateConsoleCtrlEvent, "Kernel32"), Bool, (UInt32, UInt32), UInt32(1), UInt32(getpid(w.proc)))
         else
             Base.kill(w.proc, Base.SIGINT)
         end
