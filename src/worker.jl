@@ -17,18 +17,22 @@ include("./shared.jl")
 # Logging.global_logger(Logging.ConsoleLogger(stderr, Logging.Debug))
 
 function main()
-    # Use the same port hint as Distributed
-    port_hint = 9000 + (Sockets.getpid() % 1000)
-    port, server = Sockets.listenany(port_hint)
+    # Check if we're in a container environment with a fixed port
+
+    # Container mode: use the specified port and bind to all interfaces
+    port_hint = parse(Int, get(ENV, "MALT_WORKER_PORT", 9000 + (Sockets.getpid() % 1000)))
+
+    # Normal mode: use dynamic port selection
+    port, server = Sockets.listenany(Sockets.IPv4(0, 0, 0, 0), port_hint)
+
+    # Set network parameters, this is copied from Distributed
+    Sockets.nagle(server, false)
+    Sockets.quickack(server, true)
 
     # Write port number to stdout to let main process know where to send requests
     @debug("WORKER: new port", port)
     println(stdout, port)
     flush(stdout)
-
-    # Set network parameters, this is copied from Distributed
-    Sockets.nagle(server, false)
-    Sockets.quickack(server, true)
 
     serve(server)
 end
@@ -73,7 +77,7 @@ function serve(server::Sockets.TCPServer)
         end
         # this next line can't fail
         msg_id = read(io, MsgID)
-        
+
         msg_data, success = try
             (Base.invokelatest(deserialize, io), true)
         catch err
@@ -81,7 +85,7 @@ function serve(server::Sockets.TCPServer)
         finally
             _discard_until_boundary(io)
         end
-        
+
         if !success
             if msg_type === MsgType.from_host_call_with_response
                 msg_type = MsgType.special_serialization_failure
@@ -89,7 +93,7 @@ function serve(server::Sockets.TCPServer)
                 continue
             end
         end
-        
+
         try
             @debug("WORKER: Received message", msg_data)
             handle(Val(msg_type), io, msg_data, msg_id)
@@ -142,7 +146,7 @@ function handle(::Val{MsgType.from_host_call_without_response}, socket, msg, msg
     @async try
         f(args...; kwargs...)
     catch e
-        @warn("WORKER: Got exception while running call without response", exception=(e, catch_backtrace()))
+        @warn("WORKER: Got exception while running call without response", exception = (e, catch_backtrace()))
         # TODO: exception is ignored, is that what we want here?
     end
 end
@@ -156,11 +160,12 @@ function handle(::Val{MsgType.special_serialization_failure}, socket, msg, msg_i
     )
 end
 
-format_error(err, bt) = sprint() do io
-    Base.invokelatest(showerror, io, err, bt)
-end
+format_error(err, bt) =
+    sprint() do io
+        Base.invokelatest(showerror, io, err, bt)
+    end
 
-const _channel_cache = Dict{UInt64, AbstractChannel}()
+const _channel_cache = Dict{UInt64,AbstractChannel}()
 
 if abspath(PROGRAM_FILE) == @__FILE__
     main()

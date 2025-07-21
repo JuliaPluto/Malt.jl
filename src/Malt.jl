@@ -54,6 +54,7 @@ function unwrap_worker_result(worker::AbstractWorker, result::WorkerResult)
 end
 
 include("DistributedStdlibWorker.jl")
+include("PodmanWorker.jl")
 
 """
     Malt.InProcessWorker(mod::Module=Main)
