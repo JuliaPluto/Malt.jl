@@ -45,7 +45,7 @@ end
         @test m.isrunning(w)
         @test !isempty(w.container_id)
         @test w.host_port > 0
-        @test w.container_port == 9000
+        @test w.container_port == 9001
         
         # Test basic remote evaluation
         @test m.remote_eval_fetch(w, :(1 + 1)) == 2

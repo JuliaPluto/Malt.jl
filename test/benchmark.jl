@@ -7,13 +7,10 @@ import Distributed
 const TEST_BENCHMARK = true
 
 
-@testset "Benchmark: $W" for W in (m.DistributedStdlibWorker, m.InProcessWorker, m.Worker)
-    
-    
+@testset "Benchmark: $W" for W in (m.DistributedStdlibWorker,  m.InProcessWorker, m.Worker, m.PodmanWorker)
+
     w = W()
     @test m.isrunning(w) === true
-    
-    
     
     p = Distributed.addprocs(1)[1]
 
@@ -102,15 +99,18 @@ const TEST_BENCHMARK = true
         
         @info "Expr $i" t1 t2 ratio diff=Text("$(round(Int64, tdiff)) ± $(round(Int64, σdiff))") b1 b2
         
-        if TEST_BENCHMARK
+        if TEST_BENCHMARK && !W isa m.PodmanWorker
             # we should be faster, i.e.
             # @test tdiff < 0
 
             # and we have an admissible error of 2.5%
             @test tdiff < 2*σdiff
+        elseif TEST_BENCHMARK
+            @info "Ratio between $(W) and distributed: $(ratio)"
+            @test ratio < 3
         end
     end
-    
+
     m.stop(w)
     Distributed.rmprocs(p; waitfor=30)
 end

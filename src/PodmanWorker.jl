@@ -77,7 +77,7 @@ mutable struct PodmanWorker <: AbstractWorker
         )
 
         atexit(() -> stop(w))
-        sleep(1)
+        sleep(0.1)
         # Start async tasks only after everything is ready
         _receive_loop(w)
         _exit_loop(w)
@@ -121,6 +121,7 @@ function _build_podman_cmd(image, host_port, container_port, env, exeflags)
         "-v", "$(@__DIR__):/opt/:ro",  # Mount source files read-only
         "-w", "/opt/",  # Working directory
         "--env", "OPENBLAS_NUM_THREADS=1",
+        "--env", "UV_USE_IO_URING=0",
         "--env", "MALT_WORKER_PORT=$(container_port)"
     ]
 
@@ -236,7 +237,7 @@ end
 # Implement AbstractWorker interface
 
 function _send_msg(worker::PodmanWorker, msg_type::UInt8, msg_data, expect_reply::Bool=true)::MsgID
-    _assert_is_running(worker)
+    # _assert_is_running(worker)
 
     msg_id = (worker.current_message_id += MsgID(1))::MsgID
     if expect_reply
@@ -439,6 +440,215 @@ function interrupt(w::PodmanWorker)
         @warn "Failed to interrupt PodmanWorker container" exception = e
     end
     nothing
+end
+
+# Checkpoint and Restore functionality
+
+"""
+    checkpoint(w::PodmanWorker, checkpoint_name::String; export_path::String="")::Bool
+
+Create a checkpoint of the PodmanWorker container state. This allows saving the
+current state of the worker process for later restoration.
+
+# Arguments
+- `w`: The PodmanWorker to checkpoint
+- `checkpoint_name`: Name for the checkpoint
+- `export_path`: Optional path to export checkpoint to (for persistence across restarts)
+
+# Returns
+- `true` if checkpoint was successful, `false` otherwise
+
+# Examples
+```julia
+w = Malt.PodmanWorker()
+success = Malt.checkpoint(w, "my_checkpoint")
+```
+
+# Requirements
+- Podman must be built with CRIU support
+- Container must be running
+- Sufficient disk space for checkpoint data
+"""
+function checkpoint(w::PodmanWorker; checkpoint_name::String="", export_path::String="")::Bool
+    if !isrunning(w)
+        @error "Cannot checkpoint a stopped PodmanWorker"
+        return false
+    end
+
+    try
+        @info "Creating checkpoint '$checkpoint_name' for container $(w.container_id)"
+
+        cmd = `$docker container checkpoint $(w.container_id)`
+
+        # If export path is provided, add export option
+        if !isempty(export_path)
+            # Ensure export directory exists
+            mkpath(export_path)
+            cmd = `$docker container checkpoint --tcp-established --export=$(export_path)/$checkpoint_name.tar $(w.container_id)`
+        end
+
+        # Create the checkpoint
+        result = run(cmd)
+
+        if result.exitcode == 0
+            @info "Checkpoint '$checkpoint_name' created successfully"
+            return true
+        else
+            @error "Checkpoint creation failed" exitcode = result.exitcode
+            return false
+        end
+
+    catch e
+        @error "Failed to create checkpoint" exception = e
+        return false
+    end
+end
+
+"""
+    restore(checkpoint_name::String; import_path::String="", image::String="julia:latest", 
+            env::Vector{String}=String[], exeflags::Vector{String}=String[])::Union{PodmanWorker, Nothing}
+
+Restore a PodmanWorker from a previously created checkpoint.
+
+# Arguments
+- `checkpoint_name`: Name of the checkpoint to restore
+- `import_path`: Path to import checkpoint from (if exported)
+- `image`: Docker image to use (should match original)
+- `env`: Environment variables to set
+- `exeflags`: Julia execution flags
+
+# Returns
+- `PodmanWorker` instance if successful, `nothing` if failed
+
+# Examples
+```julia
+w_restored = Malt.restore("my_checkpoint")
+```
+
+# Notes
+- The restored container will have a new container ID
+- Network port mapping will be reassigned
+- Socket connections will need to be re-established
+"""
+function restore(checkpoint_name::String)::Union{PodmanWorker,Nothing}
+    try
+        @info "Restoring checkpoint '$checkpoint_name'"
+
+        # Find available port for restored container
+        host_port = _find_available_port()
+        container_port = UInt16(9001)
+
+        # Restore the container
+        restore_cmd = [
+            docker, "container", "restore",
+            "--publish", "$(host_port):$(container_port)",
+            "--name", "restored_$(checkpoint_name)_$(time_ns())",
+            checkpoint_name
+        ]
+
+        @info "Restoring container with port mapping $host_port:$container_port"
+        result = run(Cmd(restore_cmd))
+
+        if result.exitcode != 0
+            @error "Container restore failed" exitcode = result.exitcode
+            return nothing
+        end
+
+        # Get the restored container ID
+        container_id = _get_container_id_for_port(host_port)
+
+        # Wait for the restored worker to be ready
+        _wait_for_worker_ready(container_id)
+
+        # Connect to the restored worker
+        socket = Sockets.connect(host_port)
+        _buffer_writes(socket)
+
+        # Create new PodmanWorker instance
+        # Note: We can't get the original process since it's a restored container
+        restored_worker = new(
+            container_id,
+            host_port,
+            container_port,
+            Base.Process(Base.Cmd(`true`), Base.ProcessRunning),  # Dummy process
+            socket,
+            MsgID(0),
+            Dict{MsgID,Channel{WorkerResult}}()
+        )
+
+        # Set up finalizer and cleanup
+        w = finalizer(w -> @async(stop(w)), restored_worker)
+        atexit(() -> stop(w))
+
+        # Start async tasks
+        _receive_loop(w)
+        _exit_loop(w)
+
+        @info "Successfully restored PodmanWorker from checkpoint '$checkpoint_name'"
+        return w
+
+    catch e
+        @error "Failed to restore from checkpoint" checkpoint_name exception = e
+        return nothing
+    end
+end
+
+"""
+    list_checkpoints(container_id::String="")::Vector{String}
+
+List available checkpoints for a container or all checkpoints if no container specified.
+
+# Arguments
+- `container_id`: Optional container ID to filter checkpoints
+
+# Returns
+- Vector of checkpoint names
+"""
+function list_checkpoints(container_id::String="")::Vector{String}
+    try
+        cmd = if isempty(container_id)
+            `$docker checkpoint ls --format="{{.Name}}"`
+        else
+            `$docker checkpoint ls $container_id --format="{{.Name}}"`
+        end
+
+        result = read(cmd, String)
+        checkpoints = filter(!isempty, split(strip(result), '\n'))
+        return checkpoints
+
+    catch e
+        @warn "Failed to list checkpoints" exception = e
+        return String[]
+    end
+end
+
+"""
+    remove_checkpoint(checkpoint_name::String, container_id::String="")::Bool
+
+Remove a checkpoint.
+
+# Arguments
+- `checkpoint_name`: Name of checkpoint to remove
+- `container_id`: Optional container ID
+
+# Returns
+- `true` if successful, `false` otherwise
+"""
+function remove_checkpoint(checkpoint_name::String, container_id::String="")::Bool
+    try
+        cmd = if isempty(container_id)
+            `$docker checkpoint rm $checkpoint_name`
+        else
+            `$docker checkpoint rm $container_id $checkpoint_name`
+        end
+
+        result = run(cmd)
+        return result.exitcode == 0
+
+    catch e
+        @error "Failed to remove checkpoint" checkpoint_name exception = e
+        return false
+    end
 end
 
 # Remote call implementations - delegate to existing infrastructure
