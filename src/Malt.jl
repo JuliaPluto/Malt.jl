@@ -172,9 +172,8 @@ end
 Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with PID $(w.proc_pid)")
 
 function _stdio_loop(worker::Worker)
-    @async for _i in Iterators.countfrom(1)
+    @async while isopen(worker.stdout) && isrunning(worker)
         try
-            @assert isopen(worker.stdout)
             bytes = readline(worker.stdout)
             c = get(stdout, :color, false) === true
             prefix = c ? "\e[34m[Worker $(worker.proc_pid)]:\e[39m " : "[Worker $(worker.proc_pid)]: "
@@ -184,9 +183,8 @@ function _stdio_loop(worker::Worker)
             break
         end
     end
-    @async for _i in Iterators.countfrom(1)
+    @async while isopen(worker.stderr) && isrunning(worker)
         try
-            @assert isopen(worker.stderr)
             bytes = readline(worker.stderr)
             c = get(stderr, :color, false) === true
             prefix = c ? "\e[31m[Worker $(worker.proc_pid)]:\e[39m " : "[Worker $(worker.proc_pid)]: "
