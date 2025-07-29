@@ -187,7 +187,7 @@ function _stdio_loop(worker::Worker)
         try
             bytes = readline(worker.stderr)
             c = get(stderr, :color, false) === true
-            prefix = c ? "\e[31m[Worker $(worker.proc_pid)]:\e[39m " : "[Worker $(worker.proc_pid)]: "
+            prefix = c ? "\e[33m[Worker $(worker.proc_pid)]:\e[39m " : "[Worker $(worker.proc_pid)]: "
             write(stderr, prefix, bytes, '\n')
             flush(stderr)
         catch

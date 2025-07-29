@@ -9,25 +9,25 @@ using IOCapture
     end.output
     
     blue = "\e[34m"
-    red = "\e[31m"
+    yellow = "\e[33m"
     reset = "\e[39m"
     
     s = cap(:(println("hello")))
     @test occursin("hello", s)
     @test occursin(blue, s)
-    @test !occursin(red, s)
+    @test !occursin(yellow, s)
     @test occursin(r"worker"i, s)
     
     s = cap(:(println(stderr, "hello")))
     @test occursin("hello", s)
     @test !occursin(blue, s)
-    @test occursin(red, s) 
+    @test occursin(yellow, s) 
     
     s = cap(:(println("hello\nworld")))
     @test occursin("hello", s)
     @test occursin("world", s)
     @test count(blue, s) == 2
-    @test count(red, s) == 0
+    @test count(yellow, s) == 0
     @test count("\n", s) >= 4
     
     m.stop(w)
