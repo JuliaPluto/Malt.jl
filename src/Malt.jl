@@ -156,22 +156,22 @@ Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with 
 function _stdio_loop(worker::Worker)
     @async for _i in Iterators.countfrom(1)
         try
+            @assert isopen(worker.stdout)
             bytes = readline(worker.stdout)
-            write(stdout, "\n[Worker🔹 $(worker.port)]: ")
-            write(stdout, bytes)
-            write(stderr, '\n')
+            write(stdout, "\n[🔵 Worker $(worker.port)]: ", bytes, '\n')
             flush(stdout)
         catch
+            break
         end
     end
     @async for _i in Iterators.countfrom(1)
         try
+            @assert isopen(worker.stderr)
             bytes = readline(worker.stderr)
-            write(stderr, "[Worker 🔴 $(worker.port)]: ")
-            write(stderr, bytes)
-            write(stderr, '\n')
+            write(stderr, "\n[🔴 Worker $(worker.port)]: ", bytes, '\n')
             flush(stderr)
         catch
+            break
         end
     end
 end
