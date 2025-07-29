@@ -176,7 +176,7 @@ function _stdio_loop(worker::Worker)
         try
             @assert isopen(worker.stdout)
             bytes = readline(worker.stdout)
-            write(stdout, "\n[🔵 Worker $(worker.port)]: ", bytes, '\n')
+            write(stdout, "\n[🔵 Worker $(worker.proc_pid)]: ", bytes, '\n')
             flush(stdout)
         catch
             break
@@ -186,7 +186,7 @@ function _stdio_loop(worker::Worker)
         try
             @assert isopen(worker.stderr)
             bytes = readline(worker.stderr)
-            write(stderr, "\n[🔴 Worker $(worker.port)]: ", bytes, '\n')
+            write(stderr, "\n[🔴 Worker $(worker.proc_pid)]: ", bytes, '\n')
             flush(stderr)
         catch
             break
