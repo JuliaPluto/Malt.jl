@@ -121,9 +121,27 @@ mutable struct Worker <: AbstractWorker
         push!(__iNtErNaL_running_procs, proc)
 
         # Block until reading the port number of the process (from its stdout)
-        port_str = readline(_stdout)
-        port = parse(UInt16, port_str)
+        # @info "Waiting for worker to start..."
+        
+        
+        
+        
+        port_task = @async begin
+            port_str = readline(_stdout)
+            parse(UInt16, port_str)
+        end
+        
+        poll_result = timedwait(() -> istaskdone(port_task), 8; pollint=0.001)
+        port = try
+            if poll_result == :timed_out
+                error("Timeout")
+            end
+            fetch(port_task)
+        catch
+            error("Worker process exited before we could connect.Stderr:\n$(String(readavailable(_stderr)))")
+        end
 
+        
         # Connect
         socket = Sockets.connect(port)
         _buffer_writes(socket)
