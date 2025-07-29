@@ -15,7 +15,10 @@ include("nesting.jl")
 v()
 include("benchmark.jl")
 v()
-
+include("starting.jl")
+v()
+include("stdout.jl")
+v()
 
 #TODO: 
 # test that worker.expected_replies is empty after a call
