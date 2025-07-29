@@ -176,7 +176,9 @@ function _stdio_loop(worker::Worker)
         try
             @assert isopen(worker.stdout)
             bytes = readline(worker.stdout)
-            write(stdout, "\n[🔵 Worker $(worker.proc_pid)]: ", bytes, '\n')
+            c = get(stdout, :color, false) === true
+            prefix = c ? "\e[34m[Worker $(worker.proc_pid)]:\e[39m " : "[Worker $(worker.proc_pid)]: "
+            write(stdout, prefix, bytes, '\n')
             flush(stdout)
         catch
             break
@@ -186,7 +188,9 @@ function _stdio_loop(worker::Worker)
         try
             @assert isopen(worker.stderr)
             bytes = readline(worker.stderr)
-            write(stderr, "\n[🔴 Worker $(worker.proc_pid)]: ", bytes, '\n')
+            c = get(stderr, :color, false) === true
+            prefix = c ? "\e[31m[Worker $(worker.proc_pid)]:\e[39m " : "[Worker $(worker.proc_pid)]: "
+            write(stderr, prefix, bytes, '\n')
             flush(stderr)
         catch
             break
