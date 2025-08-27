@@ -1,7 +1,7 @@
 name = "Malt"
 uuid = "36869731-bdee-424d-aa32-cab38c994e3b"
 authors = ["Sergio Alejandro Vargas <savargasqu+git@unal.edu.co>"]
-version = "1.1.2"
+version = "1.2.0"
 
 [deps]
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
@@ -16,8 +16,9 @@ julia = "^1.6"
 
 [extras]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+IOCapture = "b5f81e59-6552-4d32-b1f0-c071b021bf89"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test", "BenchmarkTools", "Random"]
+test = ["Test", "BenchmarkTools", "Random", "IOCapture"]

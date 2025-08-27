@@ -1,4 +1,4 @@
-name: Pluto backend tests
+name: Tests
 
 # Controls when the action will run. Triggers the workflow on push or pull request
 # events but only for the main branch
@@ -24,7 +24,7 @@ jobs:
             fail-fast: false
             matrix:
                 # We test quite a lot of versions because we do some OS and version specific things unfortunately
-                julia-version: ['1.6', '1.7', '1.8', '1.9', '1.10', 'nightly'] # "~1.11.0-0", 
+                julia-version: ['1.6', '1.8', 'lts', '1', 'pre', 'nightly']
                 os: [ubuntu-latest, macOS-latest, windows-latest]
 
         steps:
