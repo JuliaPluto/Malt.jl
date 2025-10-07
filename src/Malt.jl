@@ -206,9 +206,13 @@ function _exit_loop(worker::Worker)
                 end
                 break
             end
-            sleep(1)
         catch e
             @error "Unexpected error encountered in the exit loop" worker exception = (e, catch_backtrace())
+        end
+        try
+            sleep(1)
+        catch e
+            e isa EOFError || rethrow(e)
         end
     end
 end
