@@ -17,18 +17,20 @@ using IOCapture
     @test occursin(blue, s)
     @test !occursin(yellow, s)
     @test occursin(r"worker"i, s)
+    @test 1 <= count("\n", s) <= 2
     
     s = cap(:(println(stderr, "hello")))
     @test occursin("hello", s)
     @test !occursin(blue, s)
-    @test occursin(yellow, s) 
+    @test occursin(yellow, s)
+    @test 1 <= count("\n", s) <= 2
     
     s = cap(:(println("hello\nworld")))
     @test occursin("hello", s)
     @test occursin("world", s)
     @test count(blue, s) == 2
     @test count(yellow, s) == 0
-    @test count("\n", s) >= 4
+    @test 2 <= count("\n", s) <= 3
     
     m.stop(w)
 end

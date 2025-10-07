@@ -13,11 +13,11 @@ include("exceptions.jl")
 v()
 include("nesting.jl")
 v()
-include("benchmark.jl")
-v()
 include("starting.jl")
 v()
 include("stdout.jl")
+v()
+include("benchmark.jl")
 v()
 
 #TODO: 
