@@ -102,9 +102,9 @@ mutable struct Worker <: AbstractWorker
 
     stdout::Pipe
     stderr::Pipe
-    function Worker(; env=String[], exeflags=[])
+    function Worker(; env=String[], exename=exe=Base.julia_cmd()[1], exeflags=[])
         # Spawn process
-        cmd = _get_worker_cmd(; env, exeflags)
+        cmd = _get_worker_cmd(exename; env, exeflags)
         _stdout = Pipe()
         _stderr = Pipe()
         proc = run(
