@@ -102,7 +102,7 @@ mutable struct Worker <: AbstractWorker
 
     stdout::Pipe
     stderr::Pipe
-    function Worker(; env=String[], exename=exe=Base.julia_cmd()[1], exeflags=[])
+    function Worker(; env=String[], exename=Base.julia_cmd()[1], exeflags=[])
         # Spawn process
         cmd = _get_worker_cmd(exename; env, exeflags)
         _stdout = Pipe()
@@ -122,15 +122,15 @@ mutable struct Worker <: AbstractWorker
 
         # Block until reading the port number of the process (from its stdout)
         # @info "Waiting for worker to start..."
-        
-        
-        
-        
+
+
+
+
         port_task = @async begin
             port_str = readline(_stdout)
             parse(UInt16, port_str)
         end
-        
+
         poll_result = timedwait(() -> istaskdone(port_task), 8; pollint=0.001)
         port = try
             if poll_result == :timed_out
@@ -141,7 +141,7 @@ mutable struct Worker <: AbstractWorker
             error("Worker process exited before we could connect.Stderr:\n$(String(readavailable(_stderr)))")
         end
 
-        
+
         # Connect
         socket = Sockets.connect(port)
         _buffer_writes(socket)
@@ -305,8 +305,8 @@ end
 # The entire `src` dir should be relocatable, so that worker.jl can include("MsgType.jl").
 const src_path = RelocatableFolders.@path @__DIR__
 
-function _get_worker_cmd(exe=Base.julia_cmd()[1]; env, exeflags)
-    return addenv(`$exe --startup-file=no $exeflags $(joinpath(src_path, "worker.jl"))`, String["OPENBLAS_NUM_THREADS=1", Base.byteenv(env)...])
+function _get_worker_cmd(exename=Base.julia_cmd()[1]; env, exeflags)
+    return addenv(`$exename --startup-file=no $exeflags $(joinpath(src_path, "worker.jl"))`, String["OPENBLAS_NUM_THREADS=1", Base.byteenv(env)...])
 end
 
 
