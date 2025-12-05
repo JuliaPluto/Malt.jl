@@ -138,7 +138,7 @@ mutable struct Worker <: AbstractWorker
             end
             fetch(port_task)
         catch
-            error("Worker process exited before we could connect.Stderr:\n$(String(readavailable(_stderr)))")
+            error("Worker process exited before we could connect.")
         end
 
 
