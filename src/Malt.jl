@@ -131,7 +131,7 @@ mutable struct Worker <: AbstractWorker
             parse(UInt16, port_str)
         end
 
-        poll_result = timedwait(() -> istaskdone(port_task), 8; pollint=0.001)
+        poll_result = timedwait(() -> istaskdone(port_task), 30; pollint=0.02)
         port = try
             if poll_result == :timed_out
                 error("Timeout")
