@@ -124,7 +124,7 @@ mutable struct Worker <: AbstractWorker
         # @info "Waiting for worker to start..."
 
 
-
+        yield()
 
         port_task = @async begin
             port_str = readline(_stdout)
