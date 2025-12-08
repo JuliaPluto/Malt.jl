@@ -127,14 +127,14 @@ mutable struct Worker <: AbstractWorker
             parse(UInt16, port_str)
         end
 
-        poll_result = timedwait(() -> istaskdone(port_task), 8; pollint=0.001)
+        poll_result = timedwait(() -> istaskdone(port_task), 30; pollint=0.02)
         port = try
             if poll_result == :timed_out
                 error("Timeout")
             end
             fetch(port_task)
         catch
-            error("Worker process exited before we could connect.Stderr:\n$(String(readavailable(_stderr)))")
+            error("Worker process exited before we could connect. Stderr:\n$(_readavailable_nonblocking(_stderr))")
         end
 
 
@@ -163,6 +163,22 @@ mutable struct Worker <: AbstractWorker
 
         return w
     end
+end
+
+# Workaround for https://github.com/JuliaLang/julia/issues/57994
+function _readavailable_nonblocking(pipe::Pipe; timeout_s::Real=3.0)
+    (isopen(pipe) && isreadable(pipe)) || return nothing
+    
+    result = Ref{Union{Nothing,String}}(nothing)
+    t = @async result[] = String(readavailable(pipe))
+    timer_result = timedwait(() -> istaskdone(t), timeout_s)
+    if timer_result === :timed_out && !istaskdone(t)
+        try
+            Base.schedule(t, InterruptException(); error=true)
+        catch
+        end
+    end
+    result[]
 end
 
 Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with PID $(w.proc_pid)")
