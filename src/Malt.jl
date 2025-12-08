@@ -120,11 +120,7 @@ mutable struct Worker <: AbstractWorker
         __iNtErNaL_get_running_procs()
         push!(__iNtErNaL_running_procs, proc)
 
-        # Block until reading the port number of the process (from its stdout)
-        # @info "Waiting for worker to start..."
-
-
-
+        yield() # https://github.com/fonsp/Pluto.jl/issues/3423
 
         port_task = @async begin
             port_str = readline(_stdout)
