@@ -144,7 +144,7 @@ mutable struct Worker <: AbstractWorker
 
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
-        w = finalizer(w -> @async(stop(w)),
+        w = finalizer(w -> Threads.@spawn(stop(w)),
             new(
                 port,
                 proc,
@@ -209,7 +209,7 @@ function _stdio_loop(worker::Worker)
 end
 
 function _exit_loop(worker::Worker)
-    @async for _i in Iterators.countfrom(1)
+    Threads.@spawn for _i in Iterators.countfrom(1)
         try
             if !isrunning(worker)
                 # the worker got shut down, which means that we will never receive one of the expected_replies. So let's give all of them a special_worker_terminated reply.
@@ -238,7 +238,7 @@ function _receive_loop(worker::Worker)
     # instead of
     # `while true`
     # as a workaround for https://github.com/JuliaLang/julia/issues/37154
-    @async for _i in Iterators.countfrom(1)
+    Threads.@spawn for _i in Iterators.countfrom(1)
         try
             if !isopen(io)
                 @debug("HOST: io closed.")
@@ -349,7 +349,7 @@ _new_do_msg(f::Function, args, kwargs) = (
 #     # TODO: `while` instead of `if`?
 #     if w.current_socket === nothing || !isopen(w.current_socket)
 #         w.current_socket = connect(w.port)
-#         @async _receive_loop(w)
+#         Threads.@spawn _receive_loop(w)
 #     end
 #     return w
 # end
@@ -403,12 +403,12 @@ function _send_receive(w::Worker, msg_type::UInt8, msg_data)
 end
 
 """
-`@async(_wait_for_response) ∘ _send_msg`
+`Threads.@spawn(_wait_for_response) ∘ _send_msg`
 """
 function _send_receive_async(w::Worker, msg_type::UInt8, msg_data, output_transformation=identity)::Task
     # TODO: Unwrap TaskFailedExceptions
     msg_id = _send_msg(w, msg_type, msg_data, true)
-    return @async output_transformation(_wait_for_response(w, msg_id))
+    return Threads.@spawn output_transformation(_wait_for_response(w, msg_id))
 end
 
 
@@ -441,7 +441,7 @@ function remote_call(f, w::Worker, args...; kwargs...)
     )
 end
 function remote_call(f, w::InProcessWorker, args...; kwargs...)
-    w.latest_request_task = @async remote_call_fetch(f, w, args...; kwargs...)
+    w.latest_request_task = Threads.@spawn remote_call_fetch(f, w, args...; kwargs...)
 end
 function remote_call_fetch(f, w::InProcessWorker, args...; kwargs...)
     try
@@ -512,7 +512,7 @@ function remote_do(f, w::Worker, args...; kwargs...)
     nothing
 end
 function remote_do(f, ::InProcessWorker, args...; kwargs...)
-    @async f(args...; kwargs...)
+    Threads.@spawn f(args...; kwargs...)
     nothing
 end
 
@@ -711,7 +711,7 @@ function _rethrow_to_repl(e::InterruptException; rethrow_regular::Bool=false)
        Base.active_repl_backend.in_eval
 
         @debug "HOST: Rethrowing interrupt to REPL"
-        @async Base.schedule(Base.active_repl_backend.backend_task, e; error=true)
+        Threads.@spawn Base.schedule(Base.active_repl_backend.backend_task, e; error=true)
     elseif rethrow_regular
         @debug "HOST: Don't know what to do with this interrupt, rethrowing" exception = (e, catch_backtrace())
         rethrow(e)
