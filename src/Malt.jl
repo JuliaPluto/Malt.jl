@@ -102,7 +102,17 @@ mutable struct Worker <: AbstractWorker
 
     stdout::Pipe
     stderr::Pipe
-    function Worker(; env=String[], exename=Base.julia_cmd()[1], exeflags=[])
+    function Worker(
+        ;
+        env=String[],
+        exename=Base.julia_cmd()[1],
+        exeflags=[],
+        stop=stop,
+        stdio_loop=_stdio_loop,
+        exit_loop=_exit_loop,
+        receive_loop=_receive_loop,
+        )
+
         # Spawn process
         cmd = _get_worker_cmd(exename; env, exeflags)
         _stdout = Pipe()
@@ -157,9 +167,9 @@ mutable struct Worker <: AbstractWorker
             )
         )
         atexit(() -> stop(w))
-        _stdio_loop(w)
-        _exit_loop(w)
-        _receive_loop(w)
+        stdio_loop(w)
+        exit_loop(w)
+        receive_loop(w)
 
         return w
     end
