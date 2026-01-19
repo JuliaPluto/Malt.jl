@@ -100,13 +100,20 @@ mutable struct Worker <: AbstractWorker
     current_message_id::MsgID
     expected_replies::Dict{MsgID,Channel{WorkerResult}}
 
-    stdout::Pipe
-    stderr::Pipe
+    # Pipes used for collecting the stdout/stderr of the process
+    stdout_pipe::Pipe
+    stderr_pipe::Pipe
+    # IOs the streams are written to
+    collected_stdout::IO
+    collected_stderr::IO
+
     function Worker(
         ;
         env=String[],
         exename=Base.julia_cmd()[1],
         exeflags=[],
+        stdout=Base.stdout,
+        stderr=Base.stderr,
         stop=stop,
         stdio_loop=_stdio_loop,
         exit_loop=_exit_loop,
@@ -163,7 +170,9 @@ mutable struct Worker <: AbstractWorker
                 MsgID(0),
                 Dict{MsgID,Channel{WorkerResult}}(),
                 _stdout,
-                _stderr
+                _stderr,
+                stdout,
+                stderr,
             )
         )
         atexit(() -> stop(w))
@@ -194,24 +203,24 @@ end
 Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with PID $(w.proc_pid)")
 
 function _stdio_loop(worker::Worker)
-    @async while isopen(worker.stdout) && isrunning(worker)
+    @async while isopen(worker.stdout_pipe) && isrunning(worker)
         try
-            bytes = readline(worker.stdout)
+            bytes = readline(worker.stdout_pipe)
             c = get(stdout, :color, false) === true
             prefix = c ? "\e[34m[Worker $(worker.proc_pid)]:\e[39m " : "[Worker $(worker.proc_pid)]: "
-            write(stdout, prefix, bytes, '\n')
-            flush(stdout)
+            write(worker.collected_stdout, prefix, bytes, '\n')
+            flush(worker.collected_stdout)
         catch
             break
         end
     end
-    @async while isopen(worker.stderr) && isrunning(worker)
+    @async while isopen(worker.stderr_pipe) && isrunning(worker)
         try
-            bytes = readline(worker.stderr)
+            bytes = readline(worker.stderr_pipe)
             c = get(stderr, :color, false) === true
             prefix = c ? "\e[33m[Worker $(worker.proc_pid)]:\e[39m " : "[Worker $(worker.proc_pid)]: "
-            write(stderr, prefix, bytes, '\n')
-            flush(stderr)
+            write(worker.collected_stderr, prefix, bytes, '\n')
+            flush(worker.collected_stderr)
         catch
             break
         end
