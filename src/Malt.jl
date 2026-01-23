@@ -88,6 +88,13 @@ Create a new `Worker`. A `Worker` struct is a handle to a (separate) Julia proce
 julia> w = Malt.Worker()
 Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 ```
+
+# Keyword arguments
+- `env::Vector{String}`: Environment variables to set in the worker process.
+- `exename::String`: Path to the Julia executable to use for the worker process.
+- `exeflags::Vector{String}`: Additional command-line flags to pass to the Julia executable.
+- `monitor_stdout::Bool=true`: Whether to print the stdout of the worker process to the main process's stdout. When set to `false`, you can access the stdout `Pipe` via the `worker.stdout` field after creation.
+- `monitor_stderr::Bool=true`: Same for `stderr`.
 """
 mutable struct Worker <: AbstractWorker
     port::UInt16
@@ -101,25 +108,17 @@ mutable struct Worker <: AbstractWorker
     expected_replies::Dict{MsgID,Channel{WorkerResult}}
 
     # Pipes used for collecting the stdout/stderr of the process
-    stdout_pipe::Pipe
-    stderr_pipe::Pipe
-    # IOs the streams are written to
-    collected_stdout::IO
-    collected_stderr::IO
-
+    stdout::Pipe
+    stderr::Pipe    
+    
     function Worker(
         ;
         env=String[],
         exename=Base.julia_cmd()[1],
         exeflags=[],
-        stdout=Base.stdout,
-        stderr=Base.stderr,
-        stop=stop,
-        stdio_loop=_stdio_loop,
-        exit_loop=_exit_loop,
-        receive_loop=_receive_loop,
+        monitor_stdout::Bool=true,
+        monitor_stderr::Bool=true,
         )
-
         # Spawn process
         cmd = _get_worker_cmd(exename; env, exeflags)
         _stdout = Pipe()
@@ -170,15 +169,13 @@ mutable struct Worker <: AbstractWorker
                 MsgID(0),
                 Dict{MsgID,Channel{WorkerResult}}(),
                 _stdout,
-                _stderr,
-                stdout,
-                stderr,
+                _stderr
             )
         )
         atexit(() -> stop(w))
-        stdio_loop(w)
-        exit_loop(w)
-        receive_loop(w)
+        _stdio_loop(w; monitor_stdout, monitor_stderr)
+        _exit_loop(w)
+        _receive_loop(w)
 
         return w
     end
@@ -202,25 +199,25 @@ end
 
 Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with PID $(w.proc_pid)")
 
-function _stdio_loop(worker::Worker)
-    @async while isopen(worker.stdout_pipe) && isrunning(worker)
+function _stdio_loop(worker::Worker; monitor_stdout::Bool, monitor_stderr::Bool)
+    monitor_stdout && @async while isopen(worker.stdout) && isrunning(worker)
         try
-            bytes = readline(worker.stdout_pipe)
+            bytes = readline(worker.stdout)
             c = get(stdout, :color, false) === true
             prefix = c ? "\e[34m[Worker $(worker.proc_pid)]:\e[39m " : "[Worker $(worker.proc_pid)]: "
-            write(worker.collected_stdout, prefix, bytes, '\n')
-            flush(worker.collected_stdout)
+            write(stdout, prefix, bytes, '\n')
+            flush(stdout)
         catch
             break
         end
     end
-    @async while isopen(worker.stderr_pipe) && isrunning(worker)
+    monitor_stderr && @async while isopen(worker.stderr) && isrunning(worker)
         try
-            bytes = readline(worker.stderr_pipe)
+            bytes = readline(worker.stderr)
             c = get(stderr, :color, false) === true
             prefix = c ? "\e[33m[Worker $(worker.proc_pid)]:\e[39m " : "[Worker $(worker.proc_pid)]: "
-            write(worker.collected_stderr, prefix, bytes, '\n')
-            flush(worker.collected_stderr)
+            write(stderr, prefix, bytes, '\n')
+            flush(stderr)
         catch
             break
         end
