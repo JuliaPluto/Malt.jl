@@ -109,7 +109,7 @@ mutable struct Worker <: AbstractWorker
 
     # Pipes used for collecting the stdout/stderr of the process
     stdout::Pipe
-    stderr::Pipe    
+    stderr::Pipe
     
     function Worker(
         ;
