@@ -88,6 +88,13 @@ Create a new `Worker`. A `Worker` struct is a handle to a (separate) Julia proce
 julia> w = Malt.Worker()
 Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 ```
+
+# Keyword arguments
+- `env::Vector{String}`: Environment variables to set in the worker process.
+- `exename::String`: Path to the Julia executable to use for the worker process.
+- `exeflags::Vector{String}`: Additional command-line flags to pass to the Julia executable.
+- `monitor_stdout::Bool=true`: Whether to print the stdout of the worker process to the main process's stdout. When set to `false`, you can access the stdout `Pipe` via the `worker.stdout` field after creation.
+- `monitor_stderr::Bool=true`: Same for `stderr`.
 """
 mutable struct Worker <: AbstractWorker
     port::UInt16
@@ -100,9 +107,18 @@ mutable struct Worker <: AbstractWorker
     current_message_id::MsgID
     expected_replies::Dict{MsgID,Channel{WorkerResult}}
 
+    # Pipes used for collecting the stdout/stderr of the process
     stdout::Pipe
     stderr::Pipe
-    function Worker(; env=String[], exename=Base.julia_cmd()[1], exeflags=[])
+    
+    function Worker(
+        ;
+        env=String[],
+        exename=Base.julia_cmd()[1],
+        exeflags=[],
+        monitor_stdout::Bool=true,
+        monitor_stderr::Bool=true,
+        )
         # Spawn process
         cmd = _get_worker_cmd(exename; env, exeflags)
         _stdout = Pipe()
@@ -157,7 +173,7 @@ mutable struct Worker <: AbstractWorker
             )
         )
         atexit(() -> stop(w))
-        _stdio_loop(w)
+        _stdio_loop(w; monitor_stdout, monitor_stderr)
         _exit_loop(w)
         _receive_loop(w)
 
@@ -183,8 +199,8 @@ end
 
 Base.summary(io::IO, w::Worker) = write(io, "Malt.Worker on port $(w.port) with PID $(w.proc_pid)")
 
-function _stdio_loop(worker::Worker)
-    @async while isopen(worker.stdout) && isrunning(worker)
+function _stdio_loop(worker::Worker; monitor_stdout::Bool, monitor_stderr::Bool)
+    monitor_stdout && @async while isopen(worker.stdout) && isrunning(worker)
         try
             bytes = readline(worker.stdout)
             c = get(stdout, :color, false) === true
@@ -195,7 +211,7 @@ function _stdio_loop(worker::Worker)
             break
         end
     end
-    @async while isopen(worker.stderr) && isrunning(worker)
+    monitor_stderr && @async while isopen(worker.stderr) && isrunning(worker)
         try
             bytes = readline(worker.stderr)
             c = get(stderr, :color, false) === true

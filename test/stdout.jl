@@ -34,3 +34,33 @@ using IOCapture
     
     m.stop(w)
 end
+
+@testset "Stdout & stderr custom pipe" begin
+    w = m.Worker(; monitor_stdout=false, monitor_stderr=true)
+    
+    cap(expr) = IOCapture.capture(color=true) do
+        m.remote_eval_wait(w, expr)
+        sleep(0.1)
+    end.output
+    
+    blue = "\e[34m"
+    yellow = "\e[33m"
+    reset = "\e[39m"
+    
+    s = cap(:(println("hallootjes")))
+    @test s == ""
+    
+    s = cap(:(println(stderr, "hello")))
+    @test occursin("hello", s)
+    @test !occursin(blue, s)
+    @test occursin(yellow, s)
+    @test 1 <= count("\n", s) <= 2
+    
+    # Now I should be able to read the `stdout` pipe manually
+    pipe_contents = Base.readavailable(w.stdout) |> String
+    @test occursin("hallootjes", pipe_contents)
+    @test !occursin(blue, pipe_contents)
+    @test !occursin(yellow, pipe_contents)
+    
+    m.stop(w)
+end
