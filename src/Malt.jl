@@ -75,7 +75,8 @@ end
 Base.summary(io::IO, w::InProcessWorker) = write(io, "Malt.InProcessWorker in module $(w.host_module)")
 
 const __iNtErNaL_running_procs = Set{Base.Process}()
-__iNtErNaL_get_running_procs() = filter!(Base.process_running, __iNtErNaL_running_procs)
+const procs_lock = ReentrantLock()
+__iNtErNaL_get_running_procs() = Base.@lock procs_lock filter!(Base.process_running, __iNtErNaL_running_procs)
 
 """
     Malt.Worker()
@@ -134,7 +135,7 @@ mutable struct Worker <: AbstractWorker
 
         # Keep internal list
         __iNtErNaL_get_running_procs()
-        push!(__iNtErNaL_running_procs, proc)
+        Base.@lock procs_lock push!(__iNtErNaL_running_procs, proc)
 
         yield() # https://github.com/fonsp/Pluto.jl/issues/3423
 
