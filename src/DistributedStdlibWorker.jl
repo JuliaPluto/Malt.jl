@@ -27,7 +27,7 @@ mutable struct DistributedStdlibWorker <: AbstractWorker
         # TODO: process preamble from Pluto?
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
-        w = finalizer(w -> @async(stop(w)),
+        w = finalizer(w -> Threads.@spawn(stop(w)),
             new(pid, true)
         )
         atexit(() -> stop(w))
@@ -52,7 +52,7 @@ macro transform_exception(worker, ex)
 end
 
 function remote_call(f, w::DistributedStdlibWorker, args...; kwargs...)
-    @async Distributed.remotecall_fetch(f, w.pid, args...; kwargs...)
+    Threads.@spawn Distributed.remotecall_fetch(f, w.pid, args...; kwargs...)
 end
 
 function remote_call_fetch(f, w::DistributedStdlibWorker, args...; kwargs...)
