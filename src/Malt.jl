@@ -78,6 +78,8 @@ const __iNtErNaL_running_procs = Set{Base.Process}()
 const procs_lock = ReentrantLock()
 __iNtErNaL_get_running_procs() = Base.@lock procs_lock filter!(Base.process_running, __iNtErNaL_running_procs)
 
+_default_connect_timeout() = parse(Float64, get(ENV, "JULIA_WORKER_TIMEOUT", "60.0"))
+
 """
     Malt.Worker()
 
@@ -96,6 +98,7 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 - `exeflags::Vector{String}`: Additional command-line flags to pass to the Julia executable.
 - `monitor_stdout::Bool=true`: Whether to print the stdout of the worker process to the main process's stdout. When set to `false`, you can access the stdout `Pipe` via the `worker.stdout` field after creation.
 - `monitor_stderr::Bool=true`: Same for `stderr`.
+- `connect_timeout::Real`: How many seconds to wait for the worker process to start and report its port before killing it. Defaults to the `JULIA_WORKER_TIMEOUT` environment variable, which `Distributed` (and so `Malt.DistributedStdlibWorker`) also uses, or 60 seconds if it is not set. If the worker process exits before that, the constructor throws right away.
 """
 mutable struct Worker <: AbstractWorker
     port::UInt16
@@ -119,6 +122,7 @@ mutable struct Worker <: AbstractWorker
         exeflags=[],
         monitor_stdout::Bool=true,
         monitor_stderr::Bool=true,
+        connect_timeout::Real=_default_connect_timeout(),
         )
         # Spawn process
         cmd = _get_worker_cmd(exename; env, exeflags)
@@ -144,12 +148,11 @@ mutable struct Worker <: AbstractWorker
             parse(UInt16, port_str)
         end
 
-        timeout = 30
-        timedwait(() -> istaskdone(port_task) || !process_running(proc), timeout; pollint=0.02)
+        timedwait(() -> istaskdone(port_task) || !process_running(proc), connect_timeout; pollint=0.02)
         if !istaskdone(port_task) && process_running(proc)
             stderr_str = _readavailable_nonblocking(_stderr)
             kill(proc, Base.SIGKILL)
-            error("Worker process did not report its port within $(timeout) seconds, so it was killed. Stderr:\n$(stderr_str)")
+            error("Worker process did not report its port within $(connect_timeout) seconds, so it was killed. Pass a larger `connect_timeout` or set the `JULIA_WORKER_TIMEOUT` environment variable to wait longer. Stderr:\n$(stderr_str)")
         end
         port = try
             istaskdone(port_task) || error("Worker process exited")
