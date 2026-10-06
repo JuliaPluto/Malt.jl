@@ -148,8 +148,8 @@ mutable struct Worker <: AbstractWorker
             parse(UInt16, port_str)
         end
 
-        timedwait(() -> istaskdone(port_task) || !process_running(proc), connect_timeout; pollint=0.02)
-        if !istaskdone(port_task) && process_running(proc)
+        poll_result = timedwait(() -> istaskdone(port_task) || !process_running(proc), connect_timeout; pollint=0.02)
+        if poll_result == :timed_out
             stderr_str = _readavailable_nonblocking(_stderr)
             kill(proc, Base.SIGKILL)
             error("Worker process did not report its port within $(connect_timeout) seconds, so it was killed. Pass a larger `connect_timeout` or set the `JULIA_WORKER_TIMEOUT` environment variable to wait longer. Stderr:\n$(stderr_str)")
