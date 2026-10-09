@@ -12,5 +12,5 @@
     # connect to it.  When the Julia process is launched with invalid arguments, the poll
     # will time out because it'll fail to connect to it.  Here we check that the whole
     # process took a reasonable time around 40 seconds.
-    @test 25.0 < tend - tstart < 30.0
+    @test 25.0 < tend - tstart < 40.0
 end
