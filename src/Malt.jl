@@ -148,7 +148,7 @@ mutable struct Worker <: AbstractWorker
             parse(UInt16, port_str)
         end
 
-        poll_result = timedwait(() -> istaskdone(port_task) || !process_running(proc), connect_timeout; pollint=0.02)
+        poll_result = timedwait(() -> istaskdone(port_task), connect_timeout; pollint=0.02)
         port = try
             if poll_result == :timed_out
                 error("Timeout")
@@ -156,7 +156,7 @@ mutable struct Worker <: AbstractWorker
             fetch(port_task)
         catch
             stderr_tobekilled = _readavailable_nonblocking(_stderr)
-            kill(proc, Base.SIGKILL)
+            process_running(proc) && kill(proc, Base.SIGKILL)
             error("Worker process exited before we could connect. Stderr:\n$(stderr_tobekilled)")
         end
 
