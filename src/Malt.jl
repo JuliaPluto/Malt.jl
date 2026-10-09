@@ -149,16 +149,15 @@ mutable struct Worker <: AbstractWorker
         end
 
         poll_result = timedwait(() -> istaskdone(port_task) || !process_running(proc), connect_timeout; pollint=0.02)
-        if poll_result == :timed_out
-            stderr_str = _readavailable_nonblocking(_stderr)
-            kill(proc, Base.SIGKILL)
-            error("Worker process did not report its port within $(connect_timeout) seconds, so it was killed. Pass a larger `connect_timeout` or set the `JULIA_WORKER_TIMEOUT` environment variable to wait longer. Stderr:\n$(stderr_str)")
-        end
         port = try
-            istaskdone(port_task) || error("Worker process exited")
+            if poll_result == :timed_out
+                error("Timeout")
+            end
             fetch(port_task)
         catch
-            error("Worker process exited before we could connect. Stderr:\n$(_readavailable_nonblocking(_stderr))")
+            stderr_tobekilled = _readavailable_nonblocking(_stderr)
+            kill(proc, Base.SIGKILL)
+            error("Worker process exited before we could connect. Stderr:\n$(stderr_tobekilled)")
         end
 
 
