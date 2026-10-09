@@ -78,6 +78,8 @@ const __iNtErNaL_running_procs = Set{Base.Process}()
 const procs_lock = ReentrantLock()
 __iNtErNaL_get_running_procs() = Base.@lock procs_lock filter!(Base.process_running, __iNtErNaL_running_procs)
 
+_default_connect_timeout() = parse(Float64, get(ENV, "JULIA_WORKER_TIMEOUT", "60.0"))
+
 """
     Malt.Worker()
 
@@ -96,6 +98,7 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 - `exeflags::Vector{String}`: Additional command-line flags to pass to the Julia executable.
 - `monitor_stdout::Bool=true`: Whether to print the stdout of the worker process to the main process's stdout. When set to `false`, you can access the stdout `Pipe` via the `worker.stdout` field after creation.
 - `monitor_stderr::Bool=true`: Same for `stderr`.
+- `connect_timeout::Real`: How many seconds to wait for the worker process to start and report its port before killing it. Defaults to the `JULIA_WORKER_TIMEOUT` environment variable, which `Distributed` (and so `Malt.DistributedStdlibWorker`) also uses, or 60 seconds if it is not set. If the worker process exits before that, the constructor throws right away.
 """
 mutable struct Worker <: AbstractWorker
     port::UInt16
@@ -119,6 +122,7 @@ mutable struct Worker <: AbstractWorker
         exeflags=[],
         monitor_stdout::Bool=true,
         monitor_stderr::Bool=true,
+        connect_timeout::Real=_default_connect_timeout(),
         )
         # Spawn process
         cmd = _get_worker_cmd(exename; env, exeflags)
@@ -144,14 +148,16 @@ mutable struct Worker <: AbstractWorker
             parse(UInt16, port_str)
         end
 
-        poll_result = timedwait(() -> istaskdone(port_task), 30; pollint=0.02)
+        poll_result = timedwait(() -> istaskdone(port_task), connect_timeout; pollint=0.02)
         port = try
             if poll_result == :timed_out
                 error("Timeout")
             end
             fetch(port_task)
         catch
-            error("Worker process exited before we could connect. Stderr:\n$(_readavailable_nonblocking(_stderr))")
+            stderr_tobekilled = _readavailable_nonblocking(_stderr)
+            process_running(proc) && kill(proc, Base.SIGKILL)
+            error("Worker process exited before we could connect. Stderr:\n$(stderr_tobekilled)")
         end
 
 
