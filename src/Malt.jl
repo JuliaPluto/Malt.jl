@@ -78,7 +78,7 @@ const __iNtErNaL_running_procs = Set{Base.Process}()
 const procs_lock = ReentrantLock()
 __iNtErNaL_get_running_procs() = Base.@lock procs_lock filter!(Base.process_running, __iNtErNaL_running_procs)
 
-_default_connect_timeout() = parse(Float64, get(ENV, "JULIA_WORKER_TIMEOUT", "60.0"))
+_default_connect_timeout() = parse(Float64, get(ENV, "JULIA_WORKER_TIMEOUT", "30.0"))
 
 """
     Malt.Worker()
@@ -98,7 +98,7 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 - `exeflags::Vector{String}`: Additional command-line flags to pass to the Julia executable.
 - `monitor_stdout::Bool=true`: Whether to print the stdout of the worker process to the main process's stdout. When set to `false`, you can access the stdout `Pipe` via the `worker.stdout` field after creation.
 - `monitor_stderr::Bool=true`: Same for `stderr`.
-- `connect_timeout::Real`: How many seconds to wait for the worker process to start and report its port before killing it. Defaults to the `JULIA_WORKER_TIMEOUT` environment variable, which `Distributed` (and so `Malt.DistributedStdlibWorker`) also uses, or 60 seconds if it is not set. If the worker process exits before that, the constructor throws right away.
+- `connect_timeout::Real`: How many seconds to wait for the worker process to start and report its port before killing it. Defaults to the `JULIA_WORKER_TIMEOUT` environment variable, which `Distributed` (and so `Malt.DistributedStdlibWorker`) also uses, or 30 seconds if it is not set. If the worker process exits before that, the constructor throws right away.
 """
 mutable struct Worker <: AbstractWorker
     port::UInt16
