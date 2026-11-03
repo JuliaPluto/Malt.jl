@@ -12,6 +12,7 @@ using Sockets: Sockets
 using RelocatableFolders: RelocatableFolders
 
 include("./shared.jl")
+include("./worker_loop.jl")
 
 # ENV["JULIA_DEBUG"] = @__MODULE__
 
@@ -20,6 +21,11 @@ include("./shared.jl")
 
 
 abstract type AbstractWorker end
+
+# Workers that speak the Malt wire protocol over a bidirectional `IO`. `Worker` uses a TCP
+# socket to a spawned process, `IOWorker` any `IO` supplied by the caller. The protocol
+# methods only reach the stream through `worker_io`. Process lifecycle stays on `Worker`.
+abstract type ProtocolWorker <: AbstractWorker end
 
 """
 Malt will raise a `TerminatedWorkerException` when a `remote_call` is made to a `Worker`
@@ -100,7 +106,7 @@ Malt.Worker(0x0000, Process(`…`, ProcessRunning))
 - `monitor_stderr::Bool=true`: Same for `stderr`.
 - `connect_timeout::Real`: How many seconds to wait for the worker process to start and report its port before killing it. Defaults to the `JULIA_WORKER_TIMEOUT` environment variable, which `Distributed` (and so `Malt.DistributedStdlibWorker`) also uses, or 30 seconds if it is not set. If the worker process exits before that, the constructor throws right away.
 """
-mutable struct Worker <: AbstractWorker
+mutable struct Worker <: ProtocolWorker
     port::UInt16
     proc::Base.Process
     proc_pid::Int32
@@ -231,14 +237,18 @@ function _stdio_loop(worker::Worker; monitor_stdout::Bool, monitor_stderr::Bool)
     end
 end
 
+# the worker got shut down, which means that we will never receive one of the expected_replies. So let's give all of them a special_worker_terminated reply.
+function terminate_expected_replies(worker::ProtocolWorker)
+    for c in values(worker.expected_replies)
+        isready(c) || put!(c, WorkerResult(MsgType.special_worker_terminated, nothing))
+    end
+end
+
 function _exit_loop(worker::Worker)
     @async for _i in Iterators.countfrom(1)
         try
             if !isrunning(worker)
-                # the worker got shut down, which means that we will never receive one of the expected_replies. So let's give all of them a special_worker_terminated reply.
-                for c in values(worker.expected_replies)
-                    isready(c) || put!(c, WorkerResult(MsgType.special_worker_terminated, nothing))
-                end
+                terminate_expected_replies(worker)
                 break
             end
         catch e
@@ -252,8 +262,11 @@ function _exit_loop(worker::Worker)
     end
 end
 
-function _receive_loop(worker::Worker)
-    io = worker.current_socket
+# The stream a ProtocolWorker speaks over.
+worker_io(w::Worker) = w.current_socket
+
+function _receive_loop(worker::ProtocolWorker)
+    io = worker_io(worker)
 
 
     # Here we use:
@@ -386,7 +399,7 @@ _new_do_msg(f::Function, args, kwargs) = (
 """
 Low-level: send a message to a worker. Returns a `msg_id::UInt16`, which can be used to wait for a response with `_wait_for_response`.
 """
-function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool=true)::MsgID
+function _send_msg(worker::ProtocolWorker, msg_type::UInt8, msg_data, expect_reply::Bool=true)::MsgID
     _assert_is_running(worker)
     # _ensure_connected(worker)
 
@@ -397,7 +410,7 @@ function _send_msg(worker::Worker, msg_type::UInt8, msg_data, expect_reply::Bool
 
     @debug("HOST: sending message", msg_data)
 
-    _serialize_msg(worker.current_socket, msg_type, msg_id, msg_data)
+    _serialize_msg(worker_io(worker), msg_type, msg_id, msg_data)
 
     return msg_id
 end
@@ -405,7 +418,7 @@ end
 """
 Low-level: wait for a response to a previously sent message. Returns the response. Blocking call.
 """
-function _wait_for_response(worker::Worker, msg_id::MsgID)
+function _wait_for_response(worker::ProtocolWorker, msg_id::MsgID)
     if haskey(worker.expected_replies, msg_id)
         c = worker.expected_replies[msg_id]
         @debug("HOST: waiting for response of", msg_id)
@@ -420,7 +433,7 @@ end
 """
 `_wait_for_response ∘ _send_msg`
 """
-function _send_receive(w::Worker, msg_type::UInt8, msg_data)
+function _send_receive(w::ProtocolWorker, msg_type::UInt8, msg_data)
     msg_id = _send_msg(w, msg_type, msg_data, true)
     return _wait_for_response(w, msg_id)
 end
@@ -428,7 +441,7 @@ end
 """
 `@async(_wait_for_response) ∘ _send_msg`
 """
-function _send_receive_async(w::Worker, msg_type::UInt8, msg_data, output_transformation=identity)::Task
+function _send_receive_async(w::ProtocolWorker, msg_type::UInt8, msg_data, output_transformation=identity)::Task
     # TODO: Unwrap TaskFailedExceptions
     msg_id = _send_msg(w, msg_type, msg_data, true)
     return @async output_transformation(_wait_for_response(w, msg_id))
@@ -456,7 +469,7 @@ julia> fetch(promise)
 "I DECLARE BANKRUPTCY!"
 ```
 """
-function remote_call(f, w::Worker, args...; kwargs...)
+function remote_call(f, w::ProtocolWorker, args...; kwargs...)
     _send_receive_async(
         w,
         MsgType.from_host_call_with_response,
@@ -491,7 +504,7 @@ Shorthand for `fetch(Malt.remote_call(…))`. Blocks and then returns the result
 function remote_call_fetch(f, w::AbstractWorker, args...; kwargs...)
     fetch(remote_call(f, w, args...; kwargs...))
 end
-function remote_call_fetch(f, w::Worker, args...; kwargs...)
+function remote_call_fetch(f, w::ProtocolWorker, args...; kwargs...)
     _send_receive(
         w,
         MsgType.from_host_call_with_response,
@@ -507,7 +520,7 @@ Shorthand for `wait(Malt.remote_call(…))`. Blocks and discards the resulting v
 function remote_call_wait(f, w::AbstractWorker, args...; kwargs...)
     wait(remote_call(f, w, args...; kwargs...))
 end
-function remote_call_wait(f, w::Worker, args...; kwargs...)
+function remote_call_wait(f, w::ProtocolWorker, args...; kwargs...)
     _send_receive(
         w,
         MsgType.from_host_call_with_response,
@@ -525,7 +538,7 @@ Unlike `remote_call`, no reference to the remote call is available. This means:
 - You cannot wait for the call to complete on the worker.
 - The value returned by `f` is not available.
 """
-function remote_do(f, w::Worker, args...; kwargs...)
+function remote_do(f, w::ProtocolWorker, args...; kwargs...)
     _send_msg(
         w,
         MsgType.from_host_call_without_response,
@@ -588,7 +601,7 @@ Create a channel to communicate with worker `w`. `expr` must be an expression
 that evaluates to an `AbstractChannel`. `expr` should assign the channel to a (global) variable
 so the worker has a handle that can be used to send messages back to the manager.
 """
-function worker_channel(w::Worker, expr)
+function worker_channel(w::ProtocolWorker, expr)
     RemoteChannel(w, expr)
 end
 function worker_channel(w::InProcessWorker, expr)
@@ -601,10 +614,10 @@ end
 
 
 struct RemoteChannel{T} <: AbstractChannel{T}
-    worker::Worker
+    worker::ProtocolWorker
     id::UInt64
 
-    function RemoteChannel{T}(worker::Worker, expr) where {T}
+    function RemoteChannel{T}(worker::ProtocolWorker, expr) where {T}
 
         id = (worker.current_message_id += MsgID(1))::MsgID
         remote_eval_wait(Main, worker, quote
@@ -613,7 +626,7 @@ struct RemoteChannel{T} <: AbstractChannel{T}
         new{T}(worker, id)
     end
 
-    RemoteChannel(w::Worker, expr) = RemoteChannel{Any}(w, expr)
+    RemoteChannel(w::ProtocolWorker, expr) = RemoteChannel{Any}(w, expr)
 end
 
 Base.take!(rc::RemoteChannel) = remote_eval_fetch(Main, rc.worker, :(take!(Main._channel_cache[$(rc.id)])))::eltype(rc)
@@ -635,7 +648,7 @@ Check whether the worker process `w` is running.
 isrunning(w::Worker)::Bool = Base.process_running(w.proc)
 isrunning(w::InProcessWorker) = w.running
 
-_assert_is_running(w::Worker) = isrunning(w) || throw(TerminatedWorkerException())
+_assert_is_running(w::ProtocolWorker) = isrunning(w) || throw(TerminatedWorkerException())
 
 
 """
@@ -740,5 +753,7 @@ function _rethrow_to_repl(e::InterruptException; rethrow_regular::Bool=false)
         rethrow(e)
     end
 end
+
+include("./io_worker.jl")
 
 end # module
