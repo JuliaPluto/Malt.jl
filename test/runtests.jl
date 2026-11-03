@@ -17,6 +17,8 @@ include("starting.jl")
 v()
 include("stdout.jl")
 v()
+include("io_worker.jl")
+v()
 include("benchmark.jl")
 v()
 

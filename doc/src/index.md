@@ -40,6 +40,15 @@ Malt.InProcessWorker
 Malt.DistributedStdlibWorker
 ```
 
+### Workers over an existing connection
+
+If the other process is already running, for example because it connected back to you, `Malt.IOWorker` speaks the same protocol over any bidirectional `IO`. The other process calls `Malt.serve` on its end of the connection.
+
+```@docs
+Malt.IOWorker
+Malt.serve
+```
+
 
 ## Calling Functions
 
