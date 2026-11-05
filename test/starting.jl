@@ -1,16 +1,32 @@
-
-
 @testset "Starting exceptions" begin
-    # Searching for strings requires Julia 1.8
-    needle = VERSION >= v"1.8.0" ? ["exited before we could connect", "threads"] : ErrorException
+    needle = VERSION >= v"1.8.0" ? ["Could not start worker", "threads"] : ErrorException
+    @test_throws needle m.Worker(; exeflags = ["-t invalid"], connect_timeout = 10)
+end
 
-    tstart = time()
-    @test_throws needle m.Worker(; exeflags = ["-t invalid"])
-    tend = time()
-
-    # When we create a worker we start a timedwait (currently of 30 seconds), trying to
-    # connect to it.  When the Julia process is launched with invalid arguments, the poll
-    # will time out because it'll fail to connect to it.  Here we check that the whole
-    # process took a reasonable time around 30 seconds.
-    @test 25.0 < tend - tstart < 40.0
+@testset "Failed startup leaves no running worker" begin
+    for (announcement, timeout, diagnostic, error_type) in (
+        ("not-a-port", 10, "did not announce a valid port", ErrorException),
+        ("0", 10, "connect", Base.IOError),
+        (nothing, 1, "port announcement timed out", ErrorException),
+    )
+        before = copy(m.__iNtErNaL_get_running_procs())
+        try
+            code = announcement === nothing ? "sleep(30)" :
+                "println(" * repr(announcement) * "); flush(stdout); sleep(30)"
+            failure = try
+                m.Worker(; exeflags = ["-e", code], connect_timeout = timeout)
+                nothing
+            catch err
+                err
+            end
+            @test failure isa error_type
+            @test occursin(diagnostic, sprint(showerror, failure))
+            @test isempty(setdiff(m.__iNtErNaL_get_running_procs(), before))
+        finally
+            for proc in setdiff(m.__iNtErNaL_get_running_procs(), before)
+                kill(proc, Base.SIGKILL)
+                wait(proc)
+            end
+        end
+    end
 end
