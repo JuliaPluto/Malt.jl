@@ -141,29 +141,36 @@ mutable struct Worker <: AbstractWorker
         __iNtErNaL_get_running_procs()
         Base.@lock procs_lock push!(__iNtErNaL_running_procs, proc)
 
-        yield() # https://github.com/fonsp/Pluto.jl/issues/3423
-
-        port_task = @async begin
-            port_str = readline(_stdout)
-            parse(UInt16, port_str)
-        end
-
-        poll_result = timedwait(() -> istaskdone(port_task), connect_timeout; pollint=0.02)
-        port = try
-            if poll_result == :timed_out
-                error("Timeout")
+        socket = nothing
+        port, pid = try
+            pid = getpid(proc)
+            yield() # https://github.com/fonsp/Pluto.jl/issues/3423
+            port_task = @async begin
+                announced = tryparse(UInt16, readline(_stdout))
+                announced === nothing && error("Worker stdout did not announce a valid port")
+                announced
             end
-            fetch(port_task)
-        catch
-            stderr_tobekilled = _readavailable_nonblocking(_stderr)
-            process_running(proc) && kill(proc, Base.SIGKILL)
-            error("Worker process exited before we could connect. Stderr:\n$(stderr_tobekilled)")
+            timedwait(() -> istaskdone(port_task), connect_timeout; pollint=0.02) === :ok ||
+                error("Worker port announcement timed out")
+            port = fetch(port_task)
+            socket = Sockets.TCPSocket()
+            Sockets.connect(socket, port)
+            _buffer_writes(socket)
+            port, pid
+        catch err
+            preserve_error = socket !== nothing || err isa InterruptException
+            stderr_output = try
+                process_running(proc) && kill(proc, Base.SIGKILL)
+                wait(proc)
+                preserve_error ? nothing : _readavailable_nonblocking(_stderr)
+            finally
+                socket === nothing || close(socket)
+                close(_stdout)
+                close(_stderr)
+            end
+            preserve_error && rethrow()
+            error("Could not start worker: ", sprint(showerror, err), "\nStderr:\n", stderr_output)
         end
-
-
-        # Connect
-        socket = Sockets.connect(port)
-        _buffer_writes(socket)
 
 
         # There's no reason to keep the worker process alive after the manager loses its handle.
@@ -171,7 +178,7 @@ mutable struct Worker <: AbstractWorker
             new(
                 port,
                 proc,
-                getpid(proc),
+                pid,
                 socket,
                 MsgID(0),
                 Dict{MsgID,Channel{WorkerResult}}(),
